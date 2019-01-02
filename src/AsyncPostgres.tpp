@@ -1,10 +1,10 @@
 #include <type_traits>
 #include <stdexcept>
 
-#include <misc/byteswap.hpp>
-#include <misc/stringparser.hpp>
-#include <misc/templateutils.hpp>
-#include <misc/explints.hpp>
+#include <byteswap.hpp>
+#include <stringparser.hpp>
+#include <templateutils.hpp>
+#include <explints.hpp>
 
 namespace detail {
 

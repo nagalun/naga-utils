@@ -22,7 +22,7 @@
 	#include <cxxabi.h>
 #endif
 
-#include <misc/SeededMt19937.hpp>
+#include <SeededMt19937.hpp>
 
 bool makeDir(const std::string& dir) {
 #ifndef __WIN32

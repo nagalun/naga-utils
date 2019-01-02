@@ -1,5 +1,5 @@
 #include "SeededMt19937.hpp"
-#include <misc/RandomSeeder.hpp>
+#include <RandomSeeder.hpp>
 
 SeededMt19937::SeededMt19937() {
 	// RandomSeeder fills the internal state of the mersenne twister with random

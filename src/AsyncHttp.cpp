@@ -89,7 +89,6 @@ AsyncHttp::Result::Result(long httpResp, std::string data, const char * err)
   data(std::move(data)),
   errorString(err) { }
 
-
 CurlHandle::CurlHandle(CURLM * mHdl, std::string url,
 		std::unordered_map<std::string, std::string> params, std::function<void(AsyncHttp::Result)> cb)
 : multiHandle(mHdl),

@@ -7,8 +7,8 @@
 #include <string>
 #include <utility>
 
-#include <misc/explints.hpp>
-#include <misc/color.hpp>
+#include <explints.hpp>
+#include <color.hpp>
 
 class PngImage {
 	std::unique_ptr<u8[]> data;

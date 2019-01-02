@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <type_traits>
 #include <limits>
-#include <misc/explints.hpp>
+#include <explints.hpp>
 
 template<typename T>
 typename std::enable_if<!std::is_same<T, bool>::value && std::is_integral<T>::value, T>::type

@@ -7,9 +7,9 @@
 #include <iterator>
 #include <deque>
 
-#include <misc/fwd_uWS.h>
-#include <misc/explints.hpp>
-#include <misc/tuple.hpp>
+#include <fwd_uWS.h>
+#include <explints.hpp>
+#include <tuple.hpp>
 
 #include <postgresql/libpq-fe.h>
 

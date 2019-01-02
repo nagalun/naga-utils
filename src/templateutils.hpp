@@ -4,7 +4,7 @@
 #include <tuple>
 #include <array>
 
-#include <misc/optional.hpp>
+#include <optional.hpp>
 
 template<typename... Types>
 struct are_all_arithmetic;
