@@ -10,8 +10,8 @@ template<typename UserData>
 template<typename PreProcessFunc>
 PacketReader<UserData>::PacketReader(uWS::Hub& h, PreProcessFunc ppf) {
 	h.onMessage([this, ppf{std::move(ppf)}] (uWS::WebSocket<uWS::SERVER> * ws, const char * msg, sz_t len, uWS::OpCode oc) {
-		Client * cl = static_cast<Client *>(ws->getUserData());
-		if (cl == nullptr || len == 0) {
+		UserData * u = static_cast<UserData *>(ws->getUserData());
+		if (u == nullptr || len == 0) {
 			return;
 		}
 
@@ -24,7 +24,7 @@ PacketReader<UserData>::PacketReader(uWS::Hub& h, PreProcessFunc ppf) {
 		ppf(*cl);
 
 		try {
-			search->second(*cl, reinterpret_cast<const u8 *>(msg + 1), len - 1);
+			search->second(*u, reinterpret_cast<const u8 *>(msg + 1), len - 1);
 		} catch (const std::length_error& e) {
 			std::cout << "Exception on packet read: " << e.what() << std::endl;
 			ws->close(1002);
