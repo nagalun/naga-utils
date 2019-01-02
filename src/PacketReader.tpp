@@ -2,7 +2,7 @@
 #include <functional>
 #include <iostream>
 
-#include <misc/tuple.hpp>
+#include <tuple.hpp>
 
 #include <uWS.h>
 

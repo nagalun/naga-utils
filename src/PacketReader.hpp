@@ -3,8 +3,8 @@
 #include <unordered_map>
 #include <functional>
 
-#include <misc/explints.hpp>
-#include <misc/fwd_uWS.h>
+#include <explints.hpp>
+#include <fwd_uWS.h>
 
 template<typename UserData>
 class PacketReader {
