@@ -21,7 +21,7 @@ PacketReader<UserData>::PacketReader(uWS::Hub& h, PreProcessFunc ppf) {
 			return;
 		}
 
-		ppf(*cl);
+		ppf(*u);
 
 		try {
 			search->second(*u, reinterpret_cast<const u8 *>(msg + 1), len - 1);
