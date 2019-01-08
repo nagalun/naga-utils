@@ -70,7 +70,7 @@ public:
 
 AsyncPostgres::AsyncPostgres(uS::Loop * loop)
 : loop(loop),
-  nextCommandCaller(new uS::Async(loop), [] (uS::Async * a) { a->close(); }),
+  nextCommandCaller(nullptr, [] (uS::Async * a) { a->close(); }),
   pgConn(nullptr, PQfinish),
   pSock(nullptr, [] (PostgresSocket * p) { p->close(); }),
   notifFunc([] (Notification) {}),
@@ -80,11 +80,16 @@ AsyncPostgres::AsyncPostgres(uS::Loop * loop)
 	nextCommandCaller->start(AsyncPostgres::nextCmdCallerCallback);
 }
 
+void AsyncPostgres::prepareForConnection() {
+	nextCommandCaller.reset(new uS::Async(loop));
+}
+
 void AsyncPostgres::connect(std::unordered_map<std::string, std::string> connParams, bool expandDbname) {
 	const char * keywords[connParams.size() + 1]; // +1 for null termination
 	const char * values[connParams.size() + 1];
 	getStringPointers(connParams, keywords, values);
 
+	prepareForConnection();
 	pgConn.reset(PQconnectStartParams(keywords, values, expandDbname));
 	if (!pgConn) {
 		throw std::bad_alloc();
@@ -133,6 +138,7 @@ void AsyncPostgres::connectBlocking(std::unordered_map<std::string, std::string>
 	const char * values[connParams.size() + 1];
 	getStringPointers(connParams, keywords, values);
 
+	prepareForConnection();
 	pgConn.reset(PQconnectdbParams(keywords, values, expandDbname));
 	if (!pgConn) {
 		throw std::bad_alloc();
@@ -162,7 +168,7 @@ void AsyncPostgres::lazyDisconnect() {
 void AsyncPostgres::disconnect() {
 	pSock = nullptr;
 	pgConn = nullptr;
-	nextCommandCaller = nullptr; // !! not re-allocated if user connects again
+	nextCommandCaller = nullptr;
 	busy = false;
 	stopOnceEmpty = false;
 }

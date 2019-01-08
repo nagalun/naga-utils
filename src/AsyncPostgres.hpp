@@ -52,6 +52,7 @@ public:
 	void setNotifyFunc(std::function<void(Notification)>);
 
 private:
+	void prepareForConnection();
 	void signalCompletion();
 	void processNextCommand();
 	void currentCommandFinished(PGresult *);
