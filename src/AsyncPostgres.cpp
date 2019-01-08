@@ -75,13 +75,12 @@ AsyncPostgres::AsyncPostgres(uS::Loop * loop)
   pSock(nullptr, [] (PostgresSocket * p) { p->close(); }),
   notifFunc([] (Notification) {}),
   stopOnceEmpty(false),
-  busy(false) {
-  	nextCommandCaller->setData(this);
-	nextCommandCaller->start(AsyncPostgres::nextCmdCallerCallback);
-}
+  busy(false) { }
 
 void AsyncPostgres::prepareForConnection() {
 	nextCommandCaller.reset(new uS::Async(loop));
+	nextCommandCaller->setData(this);
+	nextCommandCaller->start(AsyncPostgres::nextCmdCallerCallback);
 }
 
 void AsyncPostgres::connect(std::unordered_map<std::string, std::string> connParams, bool expandDbname) {
