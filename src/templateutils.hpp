@@ -3,8 +3,7 @@
 #include <type_traits>
 #include <tuple>
 #include <array>
-
-#include <optional.hpp>
+#include <optional>
 
 template<typename... Types>
 struct are_all_arithmetic;
@@ -44,7 +43,7 @@ template<typename>
 struct is_optional : std::false_type {};
 
 template<typename T>
-struct is_optional<estd::optional<T>> : std::true_type {};
+struct is_optional<std::optional<T>> : std::true_type {};
 
 template<typename... Args>
 constexpr decltype(auto) add(Args&&... args) {

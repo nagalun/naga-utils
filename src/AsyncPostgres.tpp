@@ -1,5 +1,6 @@
 #include <type_traits>
 #include <stdexcept>
+#include <optional>
 
 #include <byteswap.hpp>
 #include <stringparser.hpp>
@@ -12,7 +13,7 @@ template<typename T>
 typename std::enable_if<is_optional<T>::value, T>::type
 getValue(char * buf, sz_t size) {
 	if (!buf) {
-		return estd::nullopt;
+		return std::nullopt;
 	}
 
 	return fromString<typename T::value_type>(std::string(buf, size));
@@ -43,7 +44,7 @@ getDataPointer(const T& value) {
 
 template<typename T>
 typename std::enable_if<std::is_null_pointer<T>::value
-		|| std::is_same<T, estd::nullopt_t>::value, const char *>::type
+		|| std::is_same<T, std::nullopt_t>::value, const char *>::type
 getDataPointer(const T&) {
 	return nullptr;
 }
@@ -72,7 +73,7 @@ getSize(const T& value) {
 }
 
 template<typename T>
-typename std::enable_if<std::is_same<T, estd::nullopt_t>::value, int>::type
+typename std::enable_if<std::is_same<T, std::nullopt_t>::value, int>::type
 getSize(const T&) {
 	return 0;
 }
@@ -140,14 +141,15 @@ template<typename... Ts>
 AsyncPostgres::TemplatedQuery<Ts...>::TemplatedQuery(std::string cmd, Ts&&... params)
 : TemplatedQuery(std::index_sequence_for<Ts...>{}, std::move(cmd), std::forward<Ts>(params)...) { }
 
-template<typename... Ts>
+template<bool important, typename... Ts>
 AsyncPostgres::Query& AsyncPostgres::query(std::string command, Ts&&... params) {
-	if (!busy) {
+	if (!busy && isConnected()) {
 		signalCompletion();
 	}
 
 	// dereference the iterator returned by emplace, and the unique_ptr
-	return **queries.emplace(queries.end(), std::make_unique<TemplatedQuery<Ts...>>(std::move(command), std::forward<Ts>(params)...));
+	return **queries.emplace(important ? queries.begin() : queries.end(),
+		std::make_unique<TemplatedQuery<Ts...>>(std::move(command), std::forward<Ts>(params)...));
 }
 
 template<typename Func, typename Tuple>

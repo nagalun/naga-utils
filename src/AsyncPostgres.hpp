@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <memory>
 #include <tuple>
@@ -15,6 +16,7 @@
 #include <postgresql/libpq-fe.h>
 
 class PostgresSocket;
+class TimedCallbacks;
 
 class AsyncPostgres {
 public:
@@ -26,41 +28,54 @@ public:
 
 private:
 	uS::Loop * loop;
+	TimedCallbacks& tc;
+
 	std::unique_ptr<uS::Async, void (*)(uS::Async *)> nextCommandCaller;
 	std::unique_ptr<PGconn, void (*)(PGconn *)> pgConn;
 	std::unique_ptr<PostgresSocket, void (*)(PostgresSocket *)> pSock;
 	std::deque<std::unique_ptr<Query>> queries;
 
 	std::function<void(Notification)> notifFunc;
+	std::function<void(ConnStatusType)> connChangeFunc;
 	bool stopOnceEmpty;
 	bool busy;
+	bool autoReconnect;
 
 public:
-	AsyncPostgres(uS::Loop *);
+	AsyncPostgres(uS::Loop *, TimedCallbacks&);
 
 	void connect(std::unordered_map<std::string, std::string> connParams = {}, bool expandDbname = false);
-	void connectBlocking(std::unordered_map<std::string, std::string> connParams = {}, bool expandDbname = false);
+	bool reconnect(); // reconnects with the same parameters
+
 	void lazyDisconnect(); // will disconnect when the query queue is empty
 	void disconnect();
 
-	template<typename... Ts>
+	void setAutoReconnect(bool);
+
+	template<bool important = false, typename... Ts>
 	Query& query(std::string, Ts&&...);
 
 	bool isConnected() const;
 	ConnStatusType getStatus() const;
 	sz_t queuedQueries() const;
+	bool isAutoReconnectEnabled() const;
+	int backendPid() const;
 
-	void setNotifyFunc(std::function<void(Notification)>);
+	void onConnectionStateChange(std::function<void(ConnStatusType)>);
+	void onNotification(std::function<void(Notification)>);
 
 private:
 	void prepareForConnection();
+	template<PostgresPollingStatusType(*PollFunc)(PGconn *)>
+	void pollConnection();
+
 	void signalCompletion();
 	void processNextCommand();
 	void currentCommandFinished(PGresult *);
 	void manageSocketEvents(bool);
 
 	void printLastError();
-	void throwLastError();
+	void throwLastError(std::string = "");
 
 	static void socketCallback(AsyncPostgres *, PostgresSocket *, int, int);
 	static void nextCmdCallerCallback(uS::Async *);
@@ -176,10 +191,9 @@ class AsyncPostgres::Notification {
 	Notification(PGnotify *);
 
 public:
-	// TODO: change these std::strings to std::string_view
-	std::string channelName() const;
+	std::string_view channelName() const;
 	int bePid() const;
-	std::string extra() const;
+	std::string_view extra() const;
 
 	friend AsyncPostgres;
 };

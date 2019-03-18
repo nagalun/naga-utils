@@ -2,12 +2,12 @@
 #include <array>
 #include <string>
 #include <algorithm>
+#include <optional>
 #include <stdexcept>
 #include <tuple>
 #include <assert.h>
 //#include <iostream>
 
-#include <optional.hpp>
 #include <varints.hpp>
 #include <templateutils.hpp>
 #include <BufferHelper.hpp>
@@ -55,7 +55,7 @@ template<typename T, std::size_t N>
 sz_t getSize(const std::array<T, N>& arr);
 
 template<typename T>
-sz_t getSize(const estd::optional<T>& opt);
+sz_t getSize(const std::optional<T>& opt);
 
 template<typename N>
 typename std::enable_if<std::is_arithmetic<N>::value,
@@ -75,7 +75,7 @@ template<typename T, std::size_t N>
 sz_t writeToBuf(u8 *& b, const std::array<T, N>& arr, sz_t remaining);
 
 template<typename T>
-sz_t writeToBuf(u8 *& b, const estd::optional<T>& opt, sz_t remaining);
+sz_t writeToBuf(u8 *& b, const std::optional<T>& opt, sz_t remaining);
 
 template<typename N>
 typename std::enable_if<std::is_arithmetic<N>::value,
@@ -203,7 +203,7 @@ sz_t getSize(const std::array<T, N>& arr) {
 }
 
 template<typename T>
-sz_t getSize(const estd::optional<T>& opt) {
+sz_t getSize(const std::optional<T>& opt) {
 	return sizeof(bool) + (opt.has_value() ? getSize(*opt) : 0);
 }
 
@@ -261,7 +261,7 @@ writeToBuf(u8 *& b, const Container& c, sz_t remaining) {
 }
 
 template<typename T>
-sz_t writeToBuf(u8 *& b, const estd::optional<T>& opt, sz_t remaining) {
+sz_t writeToBuf(u8 *& b, const std::optional<T>& opt, sz_t remaining) {
 	assert(remaining >= sizeof(bool));
 
 	b += buf::writeBE(b, opt.has_value());
@@ -408,7 +408,7 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 		return readFromBuf<T>(b, remaining);
 	}
 
-	return estd::nullopt;
+	return std::nullopt;
 }
 
 #undef BUFFER_ERROR

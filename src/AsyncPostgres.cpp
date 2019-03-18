@@ -5,6 +5,7 @@
 #include <utility>
 
 #include <explints.hpp>
+#include <TimedCallbacks.hpp>
 
 #include <uWS.h>
 
@@ -68,20 +69,17 @@ public:
 	}
 };
 
-AsyncPostgres::AsyncPostgres(uS::Loop * loop)
+AsyncPostgres::AsyncPostgres(uS::Loop * loop, TimedCallbacks& tc)
 : loop(loop),
+  tc(tc),
   nextCommandCaller(nullptr, [] (uS::Async * a) { a->close(); }),
   pgConn(nullptr, PQfinish),
   pSock(nullptr, [] (PostgresSocket * p) { p->close(); }),
   notifFunc([] (Notification) {}),
+  connChangeFunc([] (ConnStatusType) {}),
   stopOnceEmpty(false),
-  busy(false) { }
-
-void AsyncPostgres::prepareForConnection() {
-	nextCommandCaller.reset(new uS::Async(loop));
-	nextCommandCaller->setData(this);
-	nextCommandCaller->start(AsyncPostgres::nextCmdCallerCallback);
-}
+  busy(false),
+  autoReconnect(true) { }
 
 void AsyncPostgres::connect(std::unordered_map<std::string, std::string> connParams, bool expandDbname) {
 	const char * keywords[connParams.size() + 1]; // +1 for null termination
@@ -104,22 +102,108 @@ void AsyncPostgres::connect(std::unordered_map<std::string, std::string> connPar
 		throwLastError();
 	}
 
-	busy = true; // queue queries until we're connected
+	pollConnection<PQconnectPoll>();
+}
+
+bool AsyncPostgres::reconnect() {
+	if (pgConn && PQresetStart(pgConn.get())) {
+		pollConnection<PQresetPoll>();
+		return true;
+	}
+
+	return false;
+}
+
+void AsyncPostgres::lazyDisconnect() {
+	stopOnceEmpty = true;
+	if (!busy) {
+		disconnect();
+	}
+}
+
+void AsyncPostgres::disconnect() {
+	bool notify = isConnected();
+
+	pSock = nullptr;
+	pgConn = nullptr;
+	nextCommandCaller = nullptr;
+	busy = false;
+	stopOnceEmpty = false;
+
+	if (notify) {
+		connChangeFunc(getStatus());
+	}
+}
+
+void AsyncPostgres::setAutoReconnect(bool state) {
+	autoReconnect = state;
+}
+
+bool AsyncPostgres::isConnected() const {
+	return getStatus() == CONNECTION_OK;
+}
+
+ConnStatusType AsyncPostgres::getStatus() const {
+	return pgConn ? PQstatus(pgConn.get()) : CONNECTION_BAD;
+}
+
+sz_t AsyncPostgres::queuedQueries() const {
+	return queries.size();
+}
+
+bool AsyncPostgres::isAutoReconnectEnabled() const {
+	return autoReconnect;
+}
+
+int AsyncPostgres::backendPid() const {
+	return pgConn ? PQbackendPID(pgConn.get()) : 0;
+}
+
+void AsyncPostgres::onConnectionStateChange(std::function<void(ConnStatusType)> f) {
+	connChangeFunc = std::move(f);
+}
+
+void AsyncPostgres::onNotification(std::function<void(Notification)> f) {
+	notifFunc = std::move(f);
+}
+
+void AsyncPostgres::prepareForConnection() {
+	nextCommandCaller.reset(new uS::Async(loop));
+	nextCommandCaller->setData(this);
+	nextCommandCaller->start(AsyncPostgres::nextCmdCallerCallback);
+}
+
+template<PostgresPollingStatusType(*PollFunc)(PGconn *)>
+void AsyncPostgres::pollConnection() {
+	busy = true; // queue queries until we're completely connected
 
 	pSock.reset(new PostgresSocket(this, PQsocket(pgConn.get())));
 	pSock->start(UV_WRITABLE, +[] (AsyncPostgres * ap, PostgresSocket * ps, int s, int e) {
 		std::cout << "connecting... (" << s << ", " << e << ")" << std::endl;
 
-		int newEvs = PQconnectPoll(ap->pgConn.get());
+		int newEvs = PollFunc(ap->pgConn.get());
 		switch (newEvs) {
 			case PGRES_POLLING_FAILED:
-				std::cerr << "PGRES_POLLING_FAILED" << std::endl;
-				ap->throwLastError();
+				std::cerr << "PGRES_POLLING_FAILED: ";
+				ap->printLastError();
+
+				ap->connChangeFunc(ap->getStatus());
+				if (ap->isAutoReconnectEnabled()) {
+					ap->tc.startTimer([ap] {
+						if (!ap->reconnect()) {
+							ap->throwLastError("Couldn't reconnect to DB, PQresetStart failed!");
+						}
+
+						return false;
+					}, 2000);
+				}
+
+				ap->busy = false;
 				break;
 
 			case PGRES_POLLING_OK:
-				std::cout << "PGRES_POLLING_OK" << std::endl;
 				ps->setCb(AsyncPostgres::socketCallback);
+				ap->connChangeFunc(ap->getStatus());
 				ap->busy = false;
 				ap->signalCompletion();
 				break;
@@ -132,62 +216,6 @@ void AsyncPostgres::connect(std::unordered_map<std::string, std::string> connPar
 	});
 }
 
-void AsyncPostgres::connectBlocking(std::unordered_map<std::string, std::string> connParams, bool expandDbname) {
-	const char * keywords[connParams.size() + 1]; // +1 for null termination
-	const char * values[connParams.size() + 1];
-	getStringPointers(connParams, keywords, values);
-
-	prepareForConnection();
-	pgConn.reset(PQconnectdbParams(keywords, values, expandDbname));
-	if (!pgConn) {
-		throw std::bad_alloc();
-	}
-
-	if (getStatus() == CONNECTION_BAD) {
-		std::string err("Invalid parameters passed to PQconnectdbParams (CONNECTION_BAD)");
-		err += PQerrorMessage(pgConn.get());
-		throw std::invalid_argument(err);
-	}
-
-	if (PQsetnonblocking(pgConn.get(), true) == -1) {
-		throwLastError();
-	}
-
-	pSock.reset(new PostgresSocket(this, PQsocket(pgConn.get())));
-	pSock->start(UV_READABLE, AsyncPostgres::socketCallback);
-}
-
-void AsyncPostgres::lazyDisconnect() {
-	stopOnceEmpty = true;
-	if (!busy) {
-		disconnect();
-	}
-}
-
-void AsyncPostgres::disconnect() {
-	pSock = nullptr;
-	pgConn = nullptr;
-	nextCommandCaller = nullptr;
-	busy = false;
-	stopOnceEmpty = false;
-}
-
-bool AsyncPostgres::isConnected() const {
-	return getStatus() == CONNECTION_OK;
-}
-
-ConnStatusType AsyncPostgres::getStatus() const {
-	return PQstatus(pgConn.get());
-}
-
-sz_t AsyncPostgres::queuedQueries() const {
-	return queries.size();
-}
-
-void AsyncPostgres::setNotifyFunc(std::function<void(Notification)> f) {
-	notifFunc = std::move(f);
-}
-
 void AsyncPostgres::signalCompletion() {
 	nextCommandCaller->send();
 }
@@ -197,8 +225,12 @@ void AsyncPostgres::processNextCommand() {
 		busy = true;
 		if (!queries.front()->send(pgConn.get())) {
 			printLastError();
-			// XXX: is this ok? maybe look at the error, reconnect and retry if necessary
-			currentCommandFinished(nullptr);
+			if (!isConnected()) {
+				connChangeFunc(getStatus());
+				if (isAutoReconnectEnabled() && !reconnect()) {
+					throwLastError("Couldn't reconnect to DB, PQresetStart failed!");
+				}
+			}
 		}
 	} else {
 		busy = false;
@@ -245,8 +277,8 @@ void AsyncPostgres::printLastError() {
 	std::cerr << PQerrorMessage(pgConn.get()) << std::endl;
 }
 
-void AsyncPostgres::throwLastError() {
-	throw std::runtime_error(PQerrorMessage(pgConn.get()));
+void AsyncPostgres::throwLastError(std::string extra) {
+	throw std::runtime_error(extra + ": " + PQerrorMessage(pgConn.get()));
 }
 
 void AsyncPostgres::socketCallback(AsyncPostgres * ap, PostgresSocket * ps, int s, int e) {
@@ -277,13 +309,17 @@ void AsyncPostgres::nextCmdCallerCallback(uS::Async * a) {
 
 AsyncPostgres::Query::Query(std::string cmd, const char ** vals, const int * lens, const int * fmts, int n)
 : command(std::move(cmd)),
-  onDone([] (AsyncPostgres::Result) {}),
   values(vals),
   lengths(lens),
   formats(fmts),
   nParams(n) { }
 
-AsyncPostgres::Query::~Query() { }
+AsyncPostgres::Query::~Query() {
+	if (onDone) {
+		// tell callback we couldn't complete the request
+		onDone(AsyncPostgres::Result(nullptr));
+	}
+}
 
 void AsyncPostgres::Query::then(std::function<void(AsyncPostgres::Result)> f) {
 	onDone = std::move(f);
@@ -295,7 +331,10 @@ int AsyncPostgres::Query::send(PGconn * conn) {
 }
 
 void AsyncPostgres::Query::done(AsyncPostgres::Result r) {
-	onDone(std::move(r));
+	if (onDone) {
+		onDone(std::move(r));
+		onDone = nullptr; // make it impossible to double-complete
+	}
 }
 
 
@@ -369,6 +408,6 @@ AsyncPostgres::Result::iterator::reference AsyncPostgres::Result::iterator::oper
 AsyncPostgres::Notification::Notification(PGnotify * n)
 : pgNotify(n, [] (PGnotify * n) { PQfreemem(n); }) { }
 
-std::string AsyncPostgres::Notification::channelName() const { return pgNotify->relname; }
-int         AsyncPostgres::Notification::bePid()       const { return pgNotify->be_pid; }
-std::string AsyncPostgres::Notification::extra()       const { return pgNotify->extra; }
+std::string_view AsyncPostgres::Notification::channelName() const { return pgNotify->relname; }
+int              AsyncPostgres::Notification::bePid()       const { return pgNotify->be_pid; }
+std::string_view AsyncPostgres::Notification::extra()       const { return pgNotify->extra; }
