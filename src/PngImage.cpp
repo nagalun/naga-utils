@@ -24,11 +24,11 @@ static void pngWarning(png_structp pngPtr, png_const_charp msg) {
 	std::cerr << "pngWarning: " << msg << std::endl;
 }
 
-static void	pngReadData(png_structp pngPtr, png_bytep data, png_size_t length) {
+static void pngReadData(png_structp pngPtr, png_bytep data, png_size_t length) {
 	u8* b = (u8*)png_get_io_ptr(pngPtr);
 	std::copy_n(b, length, data);
 
-	png_set_read_fn(pngPtr, b + length, pngReadData); // hmmm.............
+	png_set_read_fn(pngPtr, b + length, pngReadData); // XXX: hmmm.............
 }
 
 static int pngReadChunkCb(png_structp pngPtr, png_unknown_chunkp chunk) {
@@ -41,7 +41,7 @@ static int pngReadChunkCb(png_structp pngPtr, png_unknown_chunkp chunk) {
 	return 0;
 }
 
-static struct img_t loadPng(u8* fbuffer, int len,
+static struct img_t loadPng(u8* fbuffer, int len, u8 chans,
 		std::map<std::string, std::function<bool(u8*, sz_t)>>& chunkReaders) {
 	// create png_struct with the custom error handlers
 	png_structp pngPtr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, pngError, pngWarning);
@@ -81,19 +81,19 @@ static struct img_t loadPng(u8* fbuffer, int len,
 		png_set_gray_to_rgb(pngPtr);
 	}
 
-	if (colorType & PNG_COLOR_MASK_ALPHA) { // remove alpha
+	if (chans == 3 && (colorType & PNG_COLOR_MASK_ALPHA)) { // remove alpha
 		png_set_strip_alpha(pngPtr);
 	}
 
 	png_read_update_info(pngPtr, infoPtr);
 
-	auto out(std::make_unique<u8[]>(pngWidth * pngHeight * 3));
+	auto out(std::make_unique<u8[]>(pngWidth * pngHeight * chans));
 
 	png_uint_32 rowBytes = png_get_rowbytes(pngPtr, infoPtr);
 
 	png_bytep rowPointers[pngHeight];
 	for (png_uint_32 row = 0; row < pngHeight; row++) {
-		rowPointers[row] = (png_bytep)(out.get() + row * pngWidth * 3);
+		rowPointers[row] = (png_bytep)(out.get() + row * pngWidth * chans);
 	}
 
 	png_read_image(pngPtr, rowPointers);
@@ -114,7 +114,7 @@ static void pngWriteDataToFile(png_structp png_ptr, png_bytep data, png_size_t l
 	f->write(reinterpret_cast<char*>(data), length);
 }
 
-static void encodePng(size_t pngWidth, size_t pngHeight, const u8* data,
+static void encodePng(size_t pngWidth, size_t pngHeight, u8 chans, const u8* data,
 		void(*iofun)(png_structp, png_bytep, png_size_t), void* iodata,
 		std::map<std::string, std::function<std::pair<std::unique_ptr<u8[]>, sz_t>()>>& chunkWriters) {
 	png_structp pngPtr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, pngError, pngWarning);
@@ -155,7 +155,7 @@ static void encodePng(size_t pngWidth, size_t pngHeight, const u8* data,
 
 	png_bytep rowPointers[pngHeight];
 	for (png_uint_32 row = 0; row < pngHeight; row++) {
-		rowPointers[row] = (png_bytep)(data + (row * pngWidth * 3));
+		rowPointers[row] = (png_bytep)(data + (row * pngWidth * chans));
 	}
 
 	png_set_rows(pngPtr, infoPtr, rowPointers);
@@ -172,7 +172,7 @@ static void encodePng(size_t pngWidth, size_t pngHeight, const u8* data,
 	png_destroy_write_struct(&pngPtr, &infoPtr);
 }
 
-static img_t loadPngFromFile(const std::string& file,
+static img_t loadPngFromFile(const std::string& file, u8 chans,
 		std::map<std::string, std::function<bool(u8*, sz_t)>>& chunkReaders) {
 	using std::ifstream;
 	using std::ios;
@@ -185,10 +185,10 @@ static img_t loadPngFromFile(const std::string& file,
 	ifstream::pos_type size = ifs.tellg();
 	ifs.seekg(0, ios::beg);
 
-	auto bytes(std::make_unique<u8[]>(size));
+	auto bytes(std::make_unique<u8[]>(size)); // TODO: use mmap instead
 	ifs.read(reinterpret_cast<char*>(bytes.get()), size);
 
-	return loadPng(bytes.get(), size, chunkReaders);
+	return loadPng(bytes.get(), size, chans, chunkReaders);
 }
 
 PngImage::PngImage()
@@ -208,6 +208,22 @@ PngImage::PngImage(u32 w, u32 h, RGB_u bg) {
 	allocate(w, h, bg);
 }
 
+u8 PngImage::getChannels() const {
+	return 3; // can only be 3 or 4 (no alpha/alpha)
+}
+
+u32 PngImage::getWidth() const {
+	return w;
+}
+
+u32 PngImage::getHeight() const {
+	return h;
+}
+
+u8 * PngImage::getData() {
+	return data.get();
+}
+
 void PngImage::applyTransform(std::function<RGB_u(u32 x, u32 y)> func) {
 	for (u32 y = 0; y < h; y++) {
 		for (u32 x = 0; x < w; x++) {
@@ -218,24 +234,32 @@ void PngImage::applyTransform(std::function<RGB_u(u32 x, u32 y)> func) {
 
 RGB_u PngImage::getPixel(u32 x, u32 y) const {
 	u8 * d = data.get();
+	u8 c = getChannels();
 	return {
-		d[(y * w + x) * 3],
-		d[(y * w + x) * 3 + 1],
-		d[(y * w + x) * 3 + 2]
+		d[(y * w + x) * c],
+		d[(y * w + x) * c + 1],
+		d[(y * w + x) * c + 2],
+		c == 4 ? d[(y * w + x) * c + 3] : u8(255)
 	};
 }
 
 void PngImage::setPixel(u32 x, u32 y, RGB_u clr) {
 	u8 * d = data.get();
-	d[(y * w + x) * 3] = clr.r;
-	d[(y * w + x) * 3 + 1] = clr.g;
-	d[(y * w + x) * 3 + 2] = clr.b;
+	u8 c = getChannels();
+	d[(y * w + x) * c] = clr.r;
+	d[(y * w + x) * c + 1] = clr.g;
+	d[(y * w + x) * c + 2] = clr.b;
+	if (c == 4) {
+		d[(y * w + x) * c + 3] = clr.a;
+	}
+
 }
 
 void PngImage::fill(RGB_u clr) {
 	u8 * d = data.get();
-	for (sz_t i = 0; i < w * h * 3; i++) {
-		d[i] = (u8) (clr.rgb >> ((i % 3) * 8));
+	u8 c = getChannels();
+	for (sz_t i = 0; i < w * h * c; i++) {
+		d[i] = (u8) (clr.rgb >> ((i % c) * 8));
 	}
 }
 
@@ -248,21 +272,21 @@ void PngImage::setChunkWriter(const std::string& s, std::function<std::pair<std:
 }
 
 void PngImage::allocate(u32 w, u32 h, RGB_u bg) {
-	data = std::make_unique<u8[]>(w * h * 3);
+	data = std::make_unique<u8[]>(w * h * getChannels());
 	this->w = w;
 	this->h = h;
 	fill(bg);
 }
 
 void PngImage::readFile(const std::string& file) {
-	auto img(loadPngFromFile(file, chunkReaders));
+	auto img(loadPngFromFile(file, getChannels(), chunkReaders));
 	data = std::move(img.data);
 	w = img.w;
 	h = img.h;
 }
 
 void PngImage::readFileOnMem(u8 * filebuf, sz_t len) {
-	auto img(loadPng(filebuf, len, chunkReaders));
+	auto img(loadPng(filebuf, len, getChannels(), chunkReaders));
 	data = std::move(img.data);
 	w = img.w;
 	h = img.h;
@@ -270,7 +294,7 @@ void PngImage::readFileOnMem(u8 * filebuf, sz_t len) {
 
 void PngImage::writeFileOnMem(std::vector<u8>& out) {
 	out.clear();
-	encodePng(w, h, data.get(), pngWriteDataToMem, static_cast<void*>(&out), chunkWriters);
+	encodePng(w, h, getChannels(), data.get(), pngWriteDataToMem, static_cast<void*>(&out), chunkWriters);
 }
 
 void PngImage::writeFile(const std::string& f) {
@@ -283,6 +307,6 @@ void PngImage::writeFile(const std::string& f) {
 		throw std::runtime_error("Couldn't open file: " + f);
 	}
 
-	encodePng(w, h, data.get(), pngWriteDataToFile, static_cast<void*>(&file), chunkWriters);
+	encodePng(w, h, getChannels(), data.get(), pngWriteDataToFile, static_cast<void*>(&file), chunkWriters);
 	// XXX: throw if write failed
 }

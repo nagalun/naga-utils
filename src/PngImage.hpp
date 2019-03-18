@@ -10,7 +10,7 @@
 #include <explints.hpp>
 #include <color.hpp>
 
-class PngImage {
+class PngImage { // TODO: optionally support alpha
 	std::unique_ptr<u8[]> data;
 	std::map<std::string, std::function<bool(u8*, sz_t)>> chunkReaders;
 	std::map<std::string, std::function<std::pair<std::unique_ptr<u8[]>, sz_t>()>> chunkWriters;
@@ -22,6 +22,11 @@ public:
 	PngImage(const std::string&);
 	PngImage(u8* filebuf, sz_t len);
 	PngImage(u32 w, u32 h, RGB_u = {255, 255, 255});
+
+	u8 getChannels() const;
+	u32 getWidth() const;
+	u32 getHeight() const;
+	u8 * getData();
 
 	void applyTransform(std::function<RGB_u(u32 x, u32 y)>);
 	RGB_u getPixel(u32 x, u32 y) const;

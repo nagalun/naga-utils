@@ -5,6 +5,7 @@
 #include <memory>
 #include <tuple>
 #include <iterator>
+#include <functional>
 #include <deque>
 
 #include <fwd_uWS.h>
