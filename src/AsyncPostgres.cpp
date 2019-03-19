@@ -287,8 +287,8 @@ void AsyncPostgres::socketCallback(AsyncPostgres * ap, PostgresSocket * ps, int 
 	if (e & UV_READABLE) {
 		if (!PQconsumeInput(ap->pgConn.get())) {
 			ap->printLastError();
-			if (!isConnected()) {
-				maybeSignalDisconnectionAndReconnect();
+			if (!ap->isConnected()) {
+				ap->maybeSignalDisconnectionAndReconnect();
 				return;
 			}
 		}
