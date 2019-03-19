@@ -92,10 +92,6 @@ void AsyncPostgres::connect(std::unordered_map<std::string, std::string> connPar
 		throw std::bad_alloc();
 	}
 
-	if (PQsetnonblocking(pgConn.get(), true) == -1) {
-		throwLastError();
-	}
-	
 	if (getStatus() == CONNECTION_BAD) {
 		maybeSignalDisconnectionAndReconnect();
 		return;
@@ -191,6 +187,10 @@ void AsyncPostgres::prepareForConnection() {
 
 template<PostgresPollingStatusType(*PollFunc)(PGconn *)>
 void AsyncPostgres::pollConnection() {
+	if (PQsetnonblocking(pgConn.get(), true) == -1) {
+		throwLastError();
+	}
+	
 	busy = true; // queue queries until we're completely connected
 
 	pSock.reset(new PostgresSocket(this, PQsocket(pgConn.get())));
