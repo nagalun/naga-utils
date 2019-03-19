@@ -92,14 +92,13 @@ void AsyncPostgres::connect(std::unordered_map<std::string, std::string> connPar
 		throw std::bad_alloc();
 	}
 
-	if (getStatus() == CONNECTION_BAD) {
-		std::string err("Invalid parameters passed to PQconnectStartParams (CONNECTION_BAD)");
-		err += PQerrorMessage(pgConn.get());
-		throw std::invalid_argument(err);
-	}
-
 	if (PQsetnonblocking(pgConn.get(), true) == -1) {
 		throwLastError();
+	}
+	
+	if (getStatus() == CONNECTION_BAD) {
+		maybeSignalDisconnectionAndReconnect();
+		return;
 	}
 
 	pollConnection<PQconnectPoll>();
