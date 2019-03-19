@@ -164,6 +164,7 @@ void AsyncPostgres::onNotification(std::function<void(Notification)> f) {
 
 void AsyncPostgres::maybeSignalDisconnectionAndReconnect() {
 	if (!isConnected()) {
+		pSock = nullptr;
 		connChangeFunc(getStatus());
 
 		if (isAutoReconnectEnabled()) {
@@ -190,20 +191,17 @@ void AsyncPostgres::pollConnection() {
 	if (PQsetnonblocking(pgConn.get(), true) == -1) {
 		throwLastError();
 	}
-	
+
 	busy = true; // queue queries until we're completely connected
 
 	pSock.reset(new PostgresSocket(this, PQsocket(pgConn.get())));
 	pSock->start(UV_WRITABLE, +[] (AsyncPostgres * ap, PostgresSocket * ps, int s, int e) {
-		std::cout << "connecting... (" << s << ", " << e << ")" << std::endl;
-
 		int newEvs = PollFunc(ap->pgConn.get());
 		switch (newEvs) {
 			case PGRES_POLLING_FAILED:
-				std::cerr << "PGRES_POLLING_FAILED: ";
-				ap->printLastError();
-				ap->maybeSignalDisconnectionAndReconnect();
+				std::cerr << "PGRES_POLLING_FAILED: " << ap->getLastErrorFirstLine() << std::endl;
 				ap->busy = false;
+				ap->maybeSignalDisconnectionAndReconnect();
 				break;
 
 			case PGRES_POLLING_OK:
@@ -240,7 +238,7 @@ void AsyncPostgres::processNextCommand() {
 	}
 }
 
-// won't work yet with multiple row cb
+// won't work yet with single row mode cb
 void AsyncPostgres::currentCommandFinished(PGresult * r) {
 	// XXX: no check if empty, shouldn't happen anyways
 	queries.front()->done(r);
@@ -266,7 +264,7 @@ void AsyncPostgres::manageSocketEvents(bool needsWrite) {
 		}
 	}
 
-	// always listen for read because the server can send us notices at any time?
+	// always listen for read because the server can send us notifs at any time
 	int evs = UV_READABLE;
 	evs |= needsWrite ? UV_WRITABLE : 0;
 
