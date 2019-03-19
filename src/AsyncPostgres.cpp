@@ -174,7 +174,8 @@ void AsyncPostgres::maybeSignalDisconnectionAndReconnect() {
 		if (isAutoReconnectEnabled()) {
 			tc.startTimer([this] {
 				if (!reconnect()) {
-					throwLastError("Couldn't reconnect to DB, PQresetStart failed!");
+					std::cerr << "Couldn't reconnect to DB! (" << getLastErrorFirstLine() << "), retrying." << std::endl;
+					return true;
 				}
 
 				return false;
@@ -253,7 +254,7 @@ void AsyncPostgres::manageSocketEvents(bool needsWrite) {
 	if (!PQisBusy(pgConn.get())) {
 		while (PGresult * r = PQgetResult(pgConn.get())) {
 			ExecStatusType s = PQresultStatus(r);
-			std::cout << "Popcb " << PQresStatus(s) << std::endl;
+			//std::cout << "Popcb " << PQresStatus(s) << std::endl;
 			switch (s) { // FIXME?: make it possible to enable single row mode
 				case PGRES_BAD_RESPONSE:
 				case PGRES_FATAL_ERROR:
@@ -273,12 +274,18 @@ void AsyncPostgres::manageSocketEvents(bool needsWrite) {
 	pSock->change(evs);
 }
 
+std::string_view AsyncPostgres::getLastErrorFirstLine() {
+	std::string_view err(PQerrorMessage(pgConn.get()));
+
+	return err.substr(0, err.find('\n'));
+}
+
 void AsyncPostgres::printLastError() {
 	std::cerr << PQerrorMessage(pgConn.get()) << std::endl;
 }
 
-void AsyncPostgres::throwLastError(std::string extra) {
-	throw std::runtime_error(extra + ": " + PQerrorMessage(pgConn.get()));
+void AsyncPostgres::throwLastError() {
+	throw std::runtime_error(PQerrorMessage(pgConn.get()));
 }
 
 void AsyncPostgres::socketCallback(AsyncPostgres * ap, PostgresSocket * ps, int s, int e) {

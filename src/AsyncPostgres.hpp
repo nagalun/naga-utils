@@ -76,8 +76,9 @@ private:
 	void currentCommandFinished(PGresult *);
 	void manageSocketEvents(bool);
 
+	std::string_view getLastErrorFirstLine();
 	void printLastError();
-	void throwLastError(std::string = "");
+	void throwLastError();
 
 	static void socketCallback(AsyncPostgres *, PostgresSocket *, int, int);
 	static void nextCmdCallerCallback(uS::Async *);
