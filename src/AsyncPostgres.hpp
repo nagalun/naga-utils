@@ -65,6 +65,8 @@ public:
 	void onNotification(std::function<void(Notification)>);
 
 private:
+	void maybeSignalDisconnectionAndReconnect();
+
 	void prepareForConnection();
 	template<PostgresPollingStatusType(*PollFunc)(PGconn *)>
 	void pollConnection();

@@ -167,6 +167,22 @@ void AsyncPostgres::onNotification(std::function<void(Notification)> f) {
 	notifFunc = std::move(f);
 }
 
+void AsyncPostgres::maybeSignalDisconnectionAndReconnect() {
+	if (!isConnected()) {
+		connChangeFunc(getStatus());
+
+		if (isAutoReconnectEnabled()) {
+			tc.startTimer([this] {
+				if (!reconnect()) {
+					throwLastError("Couldn't reconnect to DB, PQresetStart failed!");
+				}
+
+				return false;
+			}, 2000);
+		}
+	}
+}
+
 void AsyncPostgres::prepareForConnection() {
 	nextCommandCaller.reset(new uS::Async(loop));
 	nextCommandCaller->setData(this);
@@ -186,18 +202,7 @@ void AsyncPostgres::pollConnection() {
 			case PGRES_POLLING_FAILED:
 				std::cerr << "PGRES_POLLING_FAILED: ";
 				ap->printLastError();
-
-				ap->connChangeFunc(ap->getStatus());
-				if (ap->isAutoReconnectEnabled()) {
-					ap->tc.startTimer([ap] {
-						if (!ap->reconnect()) {
-							ap->throwLastError("Couldn't reconnect to DB, PQresetStart failed!");
-						}
-
-						return false;
-					}, 2000);
-				}
-
+				ap->maybeSignalDisconnectionAndReconnect();
 				ap->busy = false;
 				break;
 
@@ -225,12 +230,7 @@ void AsyncPostgres::processNextCommand() {
 		busy = true;
 		if (!queries.front()->send(pgConn.get())) {
 			printLastError();
-			if (!isConnected()) {
-				connChangeFunc(getStatus());
-				if (isAutoReconnectEnabled() && !reconnect()) {
-					throwLastError("Couldn't reconnect to DB, PQresetStart failed!");
-				}
-			}
+			maybeSignalDisconnectionAndReconnect();
 		}
 	} else {
 		busy = false;
@@ -287,6 +287,10 @@ void AsyncPostgres::socketCallback(AsyncPostgres * ap, PostgresSocket * ps, int 
 	if (e & UV_READABLE) {
 		if (!PQconsumeInput(ap->pgConn.get())) {
 			ap->printLastError();
+			if (!isConnected()) {
+				maybeSignalDisconnectionAndReconnect();
+				return;
+			}
 		}
 
 		if (PGnotify * p = PQnotifies(ap->pgConn.get())) {
