@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 #include <typeindex>
 
@@ -13,6 +14,8 @@ bool fileExists(const std::string&);
 
 i64 jsDateNow();
 std::vector<std::string> tokenize(const std::string&, char delimiter = ' ', bool trimEmpty = false);
+
+bool strStartsWith(std::string_view str, std::string_view prefix);
 
 u32 randUint32();
 std::string randomStr(sz_t size);

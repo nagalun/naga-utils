@@ -91,6 +91,10 @@ std::vector<std::string> tokenize(const std::string& str,
 	return tokens;
 }
 
+bool strStartsWith(std::string_view str, std::string_view prefix) {
+	return prefix.size() <= str.size() && str.substr(0, prefix.size()) == prefix;
+}
+
 static SeededMt19937 rng;
 
 u32 randUint32() {
