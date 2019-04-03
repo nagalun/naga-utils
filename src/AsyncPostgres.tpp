@@ -9,6 +9,13 @@
 
 namespace detail {
 
+template <typename T>
+using fromString_t = decltype(std::declval<T>().fromString("", 0));
+
+template <typename T>
+using has_fromString = detect<T, fromString_t>;
+
+
 template<typename T>
 typename std::enable_if<is_optional<T>::value, T>::type
 getValue(char * buf, sz_t size) {
@@ -16,7 +23,12 @@ getValue(char * buf, sz_t size) {
 		return std::nullopt;
 	}
 
-	return fromString<typename T::value_type>(std::string(buf, size));
+	using Tv = typename T::value_type;
+	if constexpr (has_fromString<Tv>::value) {
+		return Tv::fromString(buf, size);
+	} else {
+		return fromString<Tv>(std::string_view(buf, size));
+	}
 }
 
 template<typename T>
@@ -26,7 +38,11 @@ getValue(char * buf, sz_t size) {
 		throw std::invalid_argument("Value was null on non-nullable result");
 	}
 
-	return fromString<T>(std::string(buf, size));
+	if constexpr (has_fromString<T>::value) {
+		return T::fromString(buf, size);
+	} else {
+		return fromString<T>(std::string_view(buf, size));
+	}
 }
 
 template<typename T>

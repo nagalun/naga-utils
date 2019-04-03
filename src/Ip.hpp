@@ -26,6 +26,8 @@ public:
 	std::string_view toString6() const;
 	std::string_view toString4() const;
 
+	static Ip fromString(const char *, sz_t);
+
 	bool operator ==(const Ip&) const;
 	bool operator  <(const Ip&) const;
 };

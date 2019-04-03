@@ -94,6 +94,10 @@ std::string_view Ip::toString4() const {
 	return std::string_view(buf.data());
 }
 
+Ip Ip::fromString(const char * c, sz_t s) {
+	return Ip(std::string(c, s).c_str());
+}
+
 bool Ip::operator ==(const Ip& b) const {
 	return address == b.address;
 }
