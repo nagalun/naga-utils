@@ -31,15 +31,16 @@ getValue(char * buf, sz_t size) {
 
 template<typename T>
 typename std::enable_if<std::is_trivial<T>::value
-		&& !std::is_null_pointer<T>::value, const char *>::type
+		&& !std::is_null_pointer<T>::value
+		&& !has_const_iterator<T>::value, const char *>::type
 getDataPointer(const T& value) {
 	return reinterpret_cast<const char *>(&value);
 }
 
 template<typename T>
-typename std::enable_if<std::is_same<T, std::string>::value, const char *>::type
+typename std::enable_if<has_const_iterator<T>::value, const char *>::type
 getDataPointer(const T& value) {
-	return value.c_str();
+	return reinterpret_cast<const char *>(value.data());
 }
 
 template<typename T>
@@ -61,13 +62,14 @@ const char * getDataPointer(const char(& arr)[N]) {
 }
 
 template<typename T>
-typename std::enable_if<std::is_trivial<T>::value, int>::type
+typename std::enable_if<std::is_trivial<T>::value
+		&& !has_const_iterator<T>::value, int>::type
 getSize(const T&) {
 	return sizeof(T);
 }
 
 template<typename T>
-typename std::enable_if<std::is_same<T, std::string>::value, int>::type
+typename std::enable_if<has_const_iterator<T>::value, int>::type
 getSize(const T& value) {
 	return value.size();
 }
@@ -92,6 +94,7 @@ int getSize(const char(& arr)[N]) {
 template<typename T>
 typename std::enable_if<std::is_trivial<T>::value
 		&& !std::is_array<T>::value
+		&& !is_std_array<T>::value
 		&& !std::is_null_pointer<T>::value, void>::type
 byteSwap(T& value) {
 	switch (sizeof(T)) {
@@ -111,7 +114,7 @@ byteSwap(T& value) {
 
 template<typename T>
 typename std::enable_if<is_optional<T>::value
-		&& std::is_trivial<typename T::value_type>::value, void>::type
+		/*&& std::is_trivial<typename T::value_type>::value*/, void>::type
 byteSwap(T& value) {
 	if (value) {
 		byteSwap(*value);
@@ -121,6 +124,7 @@ byteSwap(T& value) {
 template<typename T>
 typename std::enable_if<!std::is_trivial<T>::value
 		|| std::is_array<T>::value
+		|| is_std_array<T>::value
 		|| std::is_null_pointer<T>::value, void>::type
 byteSwap(T&) { }
 
