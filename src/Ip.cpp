@@ -95,7 +95,13 @@ std::string_view Ip::toString4() const {
 }
 
 Ip Ip::fromString(const char * c, sz_t s) {
-	return Ip(std::string(c, s).c_str());
+	std::string str(c, s); // could not be null terminated
+	auto pos = str.find('/');
+	if (pos != std::string::npos) { // remove cidr
+		str.erase(pos);
+	}
+
+	return Ip(str.c_str());
 }
 
 bool Ip::operator ==(const Ip& b) const {
