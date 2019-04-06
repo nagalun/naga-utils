@@ -12,6 +12,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <chrono>
+#include <charconv>
 #include <random>
 #include <locale>
 #include <map>
@@ -172,21 +173,21 @@ void urldecode(std::string& s) {
 	sz_t pos = 0;
 	while ((pos = s.find('%', pos)) != std::string::npos) {
 		const char * p = s.c_str() + pos; // "%??..."
-		if (s.size() - pos < 2 || !std::isxdigit(p[2])) {
+		if (s.size() - pos < 2) {
 			throw std::length_error("Wrong URL percent encoding");
 		}
 
-		char tmp = p[3]; // str[str.size()] is guaranteed to be '\0'
-		s[pos + 3] = '\0';
-
-		unsigned long ch = std::strtoul(p + 1, nullptr, 16);
-		if (ch == -1ul) {
+		//char tmp = p[3]; // str[str.size()] is guaranteed to be '\0'
+		//s[pos + 3] = '\0';
+		auto res = std::from_chars(p + 1, p + 3, *reinterpret_cast<u8 *>(&s[pos]), 16);
+		//unsigned long ch = std::strtoul(p + 1, nullptr, 16);
+		if (res.ptr != p + 3) {
 			throw std::logic_error("Invalid URL percent encoding");
 		}
 
-		s[pos] = static_cast<char>(ch & 0xFF);
+		//s[pos] = static_cast<char>(ch & 0xFF);
 
-		s[pos + 3] = tmp; // if the string ends here we would always be writing '\0'
+		//s[pos + 3] = tmp; // if the string ends here we would always be writing '\0'
 
 		s.erase(pos + 1, 2);
 	}
