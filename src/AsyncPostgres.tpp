@@ -87,7 +87,7 @@ getSize(const T&) {
 template<typename T>
 typename std::enable_if<has_const_iterator<T>::value, int>::type
 getSize(const T& value) {
-	return value.size();
+	return value.size() * sizeof(typename T::value_type);
 }
 
 template<typename T>
