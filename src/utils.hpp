@@ -13,7 +13,7 @@ bool makeDir(const std::string&);
 bool fileExists(const std::string&);
 
 i64 jsDateNow();
-std::vector<std::string> tokenize(const std::string&, char delimiter = ' ', bool trimEmpty = false);
+std::vector<std::string_view> tokenize(std::string_view, char delimiter = ' ', bool trimEmpty = false);
 
 bool strStartsWith(std::string_view str, std::string_view prefix);
 

@@ -71,10 +71,10 @@ i64 jsDateNow() {
 	return c::duration_cast<c::milliseconds>(time).count();
 }
 
-std::vector<std::string> tokenize(const std::string& str,
+std::vector<std::string_view> tokenize(std::string_view str,
 		char delimiter, bool trimEmpty) {
 	sz_t pos, lastPos = 0, length = str.length();
-	std::vector<std::string> tokens;
+	std::vector<std::string_view> tokens;
 	while (lastPos < length + 1) {
 		pos = str.find_first_of(delimiter, lastPos);
 		if (pos == std::string::npos) {
