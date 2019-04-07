@@ -9,6 +9,10 @@
 
 #include <uWS.h>
 
+bool AsyncPostgres::QuerySharedPtrComparator::operator()(const ll::shared_ptr<Query>& lhs, const ll::shared_ptr<Query>& rhs) const {
+	return *lhs > *rhs;
+}
+
 void getStringPointers(const std::unordered_map<std::string, std::string>& str, const char ** k, const char ** v) {
 	sz_t i = 0;
 	for (auto it = str.begin(); it != str.end(); ++it) {
@@ -75,10 +79,12 @@ AsyncPostgres::AsyncPostgres(uS::Loop * loop, TimedCallbacks& tc)
   nextCommandCaller(nullptr, [] (uS::Async * a) { a->close(); }),
   pgConn(nullptr, PQfinish),
   pSock(nullptr, [] (PostgresSocket * p) { p->close(); }),
+  queries(QuerySharedPtrComparator()),
   notifFunc([] (Notification) {}),
   connChangeFunc([] (ConnStatusType) {}),
   stopOnceEmpty(false),
   busy(false),
+  awaitingResponse(false),
   autoReconnect(true) { }
 
 void AsyncPostgres::connect(std::unordered_map<std::string, std::string> connParams, bool expandDbname) {
@@ -132,6 +138,19 @@ void AsyncPostgres::disconnect() {
 
 void AsyncPostgres::setAutoReconnect(bool state) {
 	autoReconnect = state;
+}
+
+bool AsyncPostgres::cancelQuery(Query& q) {
+	auto it = q.getQueueIterator();
+	auto beg = queries.begin();
+	if (it == beg && awaitingResponse) {
+		// query is already sent (or being sent) to postgres, cancel request might fail
+		return PQrequestCancel(pgConn.get()) == 1;
+		// return false;
+	}
+
+	queries.erase(it);
+	return true;
 }
 
 bool AsyncPostgres::isConnected() const {
@@ -226,9 +245,11 @@ void AsyncPostgres::signalCompletion() {
 void AsyncPostgres::processNextCommand() {
 	if (!queries.empty()) {
 		busy = true;
-		if (!queries.front()->send(pgConn.get())) {
+		if (!(*queries.begin())->send(pgConn.get())) {
 			printLastError();
 			maybeSignalDisconnectionAndReconnect();
+		} else {
+			awaitingResponse = true;
 		}
 	} else {
 		busy = false;
@@ -241,9 +262,11 @@ void AsyncPostgres::processNextCommand() {
 // won't work yet with single row mode cb
 void AsyncPostgres::currentCommandFinished(PGresult * r) {
 	// XXX: no check if empty, shouldn't happen anyways
-	queries.front()->done(r);
-	queries.pop_front();
+	auto it = queries.begin();
+	(*it)->done(r);
+	queries.erase(it);
 
+	awaitingResponse = false;
 	signalCompletion();
 }
 
@@ -315,12 +338,13 @@ void AsyncPostgres::nextCmdCallerCallback(uS::Async * a) {
 }
 
 
-AsyncPostgres::Query::Query(std::string cmd, const char ** vals, const int * lens, const int * fmts, int n)
+AsyncPostgres::Query::Query(int prio, std::string cmd, const char ** vals, const int * lens, const int * fmts, int n)
 : command(std::move(cmd)),
   values(vals),
   lengths(lens),
   formats(fmts),
-  nParams(n) { }
+  nParams(n),
+  priority(prio) { }
 
 AsyncPostgres::Query::~Query() {
 	if (onDone) {
@@ -331,6 +355,14 @@ AsyncPostgres::Query::~Query() {
 
 void AsyncPostgres::Query::then(std::function<void(AsyncPostgres::Result)> f) {
 	onDone = std::move(f);
+}
+
+bool AsyncPostgres::Query::operator>(const Query& q) const {
+	return priority > q.priority;
+}
+
+bool AsyncPostgres::Query::operator<(const Query& q) const {
+	return priority < q.priority;
 }
 
 int AsyncPostgres::Query::send(PGconn * conn) {
@@ -345,6 +377,13 @@ void AsyncPostgres::Query::done(AsyncPostgres::Result r) {
 	}
 }
 
+AsyncPostgres::QueryQueue::const_iterator AsyncPostgres::Query::getQueueIterator() const {
+	return queue_it;
+}
+
+void AsyncPostgres::Query::setQueueIterator(AsyncPostgres::QueryQueue::const_iterator it) {
+	queue_it = it;
+}
 
 AsyncPostgres::Result::Result(PGresult * r)
 : pgResult(r, PQclear) { }

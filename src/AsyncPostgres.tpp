@@ -15,6 +15,18 @@ using fromString_t = decltype(std::declval<T>().fromString("", 0));
 template <typename T>
 using has_fromString = detect<T, fromString_t>;
 
+template <typename T>
+using data_t = decltype(std::declval<T>().data());
+
+template <typename T>
+using has_data = detect<T, data_t>;
+
+template <typename T>
+using dataSizeBytes_t = decltype(std::declval<T>().dataSizeBytes());
+
+template <typename T>
+using has_dataSizeBytes = detect<T, dataSizeBytes_t>;
+
 
 template<typename T>
 typename std::enable_if<is_optional<T>::value, T>::type
@@ -50,7 +62,11 @@ typename std::enable_if<std::is_trivial<T>::value
 		&& !std::is_null_pointer<T>::value
 		&& !has_const_iterator<T>::value, const char *>::type
 getDataPointer(const T& value) {
-	return reinterpret_cast<const char *>(&value);
+	if constexpr (has_data<T>::value && has_dataSizeBytes<T>::value) {
+		return value.data();
+	} else {
+		return reinterpret_cast<const char *>(&value);
+	}
 }
 
 template<typename T>
@@ -80,8 +96,12 @@ const char * getDataPointer(const char(& arr)[N]) {
 template<typename T>
 typename std::enable_if<std::is_trivial<T>::value
 		&& !has_const_iterator<T>::value, int>::type
-getSize(const T&) {
-	return sizeof(T);
+getSize(const T& value) {
+	if constexpr (has_data<T>::value && has_dataSizeBytes<T>::value) {
+		return value.dataSizeBytes();
+	} else {
+		return sizeof(T);
+	}
 }
 
 template<typename T>
@@ -148,8 +168,8 @@ byteSwap(T&) { }
 
 template<typename... Ts>
 template<std::size_t... Is>
-AsyncPostgres::TemplatedQuery<Ts...>::TemplatedQuery(std::index_sequence<Is...>, std::string cmd, Ts&&... params)
-: Query(std::move(cmd), realValues, realLengths, realFormats, sizeof... (Ts)),
+AsyncPostgres::TemplatedQuery<Ts...>::TemplatedQuery(std::index_sequence<Is...>, int prio, std::string cmd, Ts&&... params)
+: Query(prio, std::move(cmd), realValues, realLengths, realFormats, sizeof... (Ts)),
   valueStorage(std::forward<Ts>(params)...),
   realValues{detail::getDataPointer(std::get<Is>(valueStorage))...},
   realLengths{detail::getSize(std::get<Is>(valueStorage))...},
@@ -158,18 +178,19 @@ AsyncPostgres::TemplatedQuery<Ts...>::TemplatedQuery(std::index_sequence<Is...>,
 }
 
 template<typename... Ts>
-AsyncPostgres::TemplatedQuery<Ts...>::TemplatedQuery(std::string cmd, Ts&&... params)
-: TemplatedQuery(std::index_sequence_for<Ts...>{}, std::move(cmd), std::forward<Ts>(params)...) { }
+AsyncPostgres::TemplatedQuery<Ts...>::TemplatedQuery(int prio, std::string cmd, Ts&&... params)
+: TemplatedQuery(std::index_sequence_for<Ts...>{}, prio, std::move(cmd), std::forward<Ts>(params)...) { }
 
-template<bool important, typename... Ts>
-AsyncPostgres::Query& AsyncPostgres::query(std::string command, Ts&&... params) {
+template<int priority, typename... Ts>
+ll::shared_ptr<AsyncPostgres::Query> AsyncPostgres::query(std::string command, Ts&&... params) {
 	if (!busy && isConnected()) {
 		signalCompletion();
 	}
 
 	// dereference the iterator returned by emplace, and the unique_ptr
-	return **queries.emplace(important ? queries.begin() : queries.end(),
-		std::make_unique<TemplatedQuery<Ts...>>(std::move(command), std::forward<Ts>(params)...));
+	auto it = queries.emplace(priority, std::move(command), std::forward<Ts>(params)...);
+	(*it)->setQueueIterator(it);
+	return *it;
 }
 
 template<typename Func, typename Tuple>

@@ -7,11 +7,12 @@
 #include <tuple>
 #include <iterator>
 #include <functional>
-#include <deque>
+#include <set>
 
 #include <fwd_uWS.h>
 #include <explints.hpp>
 #include <tuple.hpp>
+#include <shared_ptr_ll.hpp>
 
 #include <postgresql/libpq-fe.h>
 
@@ -21,10 +22,16 @@ class TimedCallbacks;
 class AsyncPostgres {
 public:
 	class Query;
+
+	struct QuerySharedPtrComparator {
+		bool operator()(const ll::shared_ptr<Query>& lhs, const ll::shared_ptr<Query>& rhs) const;
+	};
+
 	template<typename... Ts>
 	class TemplatedQuery;
 	class Result;
 	class Notification;
+	using QueryQueue = std::multiset<ll::shared_ptr<Query>, QuerySharedPtrComparator>;
 
 private:
 	uS::Loop * loop;
@@ -33,12 +40,13 @@ private:
 	std::unique_ptr<uS::Async, void (*)(uS::Async *)> nextCommandCaller;
 	std::unique_ptr<PGconn, void (*)(PGconn *)> pgConn;
 	std::unique_ptr<PostgresSocket, void (*)(PostgresSocket *)> pSock;
-	std::deque<std::unique_ptr<Query>> queries;
+	QueryQueue queries;
 
 	std::function<void(Notification)> notifFunc;
 	std::function<void(ConnStatusType)> connChangeFunc;
 	bool stopOnceEmpty;
 	bool busy;
+	bool awaitingResponse;
 	bool autoReconnect;
 
 public:
@@ -52,8 +60,10 @@ public:
 
 	void setAutoReconnect(bool);
 
-	template<bool important = false, typename... Ts>
-	Query& query(std::string, Ts&&...);
+	template<int priority = 0, typename... Ts>
+	ll::shared_ptr<Query> query(std::string, Ts&&...);
+	// cancel may fail, query callback will still be called, even if cancelled ok
+	bool cancelQuery(Query&);
 
 	bool isConnected() const;
 	ConnStatusType getStatus() const;
@@ -92,18 +102,24 @@ class AsyncPostgres::Query {
 	const char ** values;
 	const int * lengths;
 	const int * formats;
+	AsyncPostgres::QueryQueue::const_iterator queue_it;
 	int nParams;
+	const int priority;
 
 public:
-	Query(std::string, const char **, const int *, const int *, int);
+	Query(int prio, std::string, const char **, const int *, const int *, int);
 	virtual ~Query();
 
 	void then(std::function<void(Result)>);
-	//void cancel();
+
+	bool operator>(const Query&) const;
+	bool operator<(const Query&) const;
 
 private:
 	int send(PGconn *);
 	void done(Result);
+	AsyncPostgres::QueryQueue::const_iterator getQueueIterator() const;
+	void setQueueIterator(AsyncPostgres::QueryQueue::const_iterator);
 
 	friend AsyncPostgres;
 };
@@ -116,10 +132,10 @@ class AsyncPostgres::TemplatedQuery : public AsyncPostgres::Query {
 	const int realFormats[sizeof... (Ts)];
 
 	template<std::size_t... Is>
-	TemplatedQuery(std::index_sequence<Is...>, std::string, Ts&&...);
+	TemplatedQuery(std::index_sequence<Is...>, int prio, std::string, Ts&&...);
 
 public:
-	TemplatedQuery(std::string, Ts&&...);
+	TemplatedQuery(int prio, std::string, Ts&&...);
 };
 
 class AsyncPostgres::Result {
