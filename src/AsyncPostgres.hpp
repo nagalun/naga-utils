@@ -110,6 +110,7 @@ public:
 	Query(int prio, std::string, const char **, const int *, const int *, int);
 	virtual ~Query();
 
+	bool isDone() const;
 	void then(std::function<void(Result)>);
 
 	bool operator>(const Query&) const;

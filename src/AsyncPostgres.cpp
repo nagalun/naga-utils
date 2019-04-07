@@ -340,6 +340,7 @@ void AsyncPostgres::nextCmdCallerCallback(uS::Async * a) {
 
 AsyncPostgres::Query::Query(int prio, std::string cmd, const char ** vals, const int * lens, const int * fmts, int n)
 : command(std::move(cmd)),
+  onDone([] (AsyncPostgres::Result) {}),
   values(vals),
   lengths(lens),
   formats(fmts),
@@ -351,6 +352,10 @@ AsyncPostgres::Query::~Query() {
 		// tell callback we couldn't complete the request
 		onDone(AsyncPostgres::Result(nullptr));
 	}
+}
+
+bool AsyncPostgres::Query::isDone() const {
+	return !onDone;
 }
 
 void AsyncPostgres::Query::then(std::function<void(AsyncPostgres::Result)> f) {

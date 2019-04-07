@@ -188,7 +188,7 @@ ll::shared_ptr<AsyncPostgres::Query> AsyncPostgres::query(std::string command, T
 	}
 
 	// dereference the iterator returned by emplace, and the unique_ptr
-	auto it = queries.emplace(priority, std::move(command), std::forward<Ts>(params)...);
+	auto it = queries.emplace(ll::make_shared<AsyncPostgres::Query>(priority, std::move(command), std::forward<Ts>(params)...));
 	(*it)->setQueueIterator(it);
 	return *it;
 }
