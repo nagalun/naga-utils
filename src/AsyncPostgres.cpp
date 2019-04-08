@@ -80,6 +80,7 @@ AsyncPostgres::AsyncPostgres(uS::Loop * loop, TimedCallbacks& tc)
   pgConn(nullptr, PQfinish),
   pSock(nullptr, [] (PostgresSocket * p) { p->close(); }),
   queries(QuerySharedPtrComparator()),
+  currentQuery(queries.end()),
   notifFunc([] (Notification) {}),
   connChangeFunc([] (ConnStatusType) {}),
   stopOnceEmpty(false),
@@ -142,8 +143,7 @@ void AsyncPostgres::setAutoReconnect(bool state) {
 
 bool AsyncPostgres::cancelQuery(Query& q) {
 	auto it = q.getQueueIterator();
-	auto beg = queries.begin();
-	if (it == beg && awaitingResponse) {
+	if (it == currentQuery && awaitingResponse) {
 		// query is already sent (or being sent) to postgres, cancel request might fail
 		return PQrequestCancel(pgConn.get()) == 1;
 		// return false;
@@ -245,9 +245,19 @@ void AsyncPostgres::signalCompletion() {
 void AsyncPostgres::processNextCommand() {
 	if (!queries.empty()) {
 		busy = true;
-		if (!(*queries.begin())->send(pgConn.get())) {
+		currentQuery = queries.begin();
+		if (!(*currentQuery)->send(pgConn.get())) {
+			currentQuery = queries.end();
 			printLastError();
-			maybeSignalDisconnectionAndReconnect();
+			if (isConnected()) {
+				// this should never happen, but just in case try again in 5 secs
+				tc.startTimer([this] {
+					processNextCommand();
+					return false;
+				}, 5000);
+			} else {
+				maybeSignalDisconnectionAndReconnect();
+			}
 		} else {
 			awaitingResponse = true;
 		}
@@ -262,11 +272,11 @@ void AsyncPostgres::processNextCommand() {
 // won't work yet with single row mode cb
 void AsyncPostgres::currentCommandFinished(PGresult * r) {
 	// XXX: no check if empty, shouldn't happen anyways
-	auto it = queries.begin();
-	(*it)->done(r);
-	queries.erase(it);
+	(*currentQuery)->done(r);
+	queries.erase(currentQuery);
 
 	awaitingResponse = false;
+	currentQuery = queries.end();
 	signalCompletion();
 }
 

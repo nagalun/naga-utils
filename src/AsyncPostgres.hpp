@@ -41,6 +41,7 @@ private:
 	std::unique_ptr<PGconn, void (*)(PGconn *)> pgConn;
 	std::unique_ptr<PostgresSocket, void (*)(PostgresSocket *)> pSock;
 	QueryQueue queries;
+	QueryQueue::const_iterator currentQuery; // queries.begin() could change at any time
 
 	std::function<void(Notification)> notifFunc;
 	std::function<void(ConnStatusType)> connChangeFunc;
