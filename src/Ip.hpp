@@ -9,6 +9,7 @@
 
 class Ip {
 	std::array<u8, 16> address;
+	bool isIpv4Cache;
 
 public:
 	Ip(const char *); // string -> bin conv.
@@ -19,6 +20,7 @@ public:
 	//Ip(u8[16]);
 
 	bool isLocal() const;
+	bool calculateIsIpv4() const;
 	bool isIpv4() const;
 	const std::array<u8, 16>& get() const;
 	u32 get4() const;
@@ -26,6 +28,8 @@ public:
 	std::string_view toString6() const;
 	std::string_view toString4() const;
 
+	const char * data() const;
+	sz_t dataSizeBytes() const;
 	static Ip fromString(const char *, sz_t);
 
 	bool operator ==(const Ip&) const;

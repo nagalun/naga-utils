@@ -20,26 +20,31 @@ Ip::Ip(const char * ip) {
 	if (inet_pton(AF_INET, ip, address.data() + 12) != 1 && inet_pton(AF_INET6, ip, address.data()) != 1) {
 		throw std::invalid_argument("Invalid IP address! (" + std::string(ip) + ")");
 	}
+
+	isIpv4Cache = calculateIsIpv4();
 }
 
-Ip::Ip(const std::string& s)
+Ip::Ip(const std::string& s) // can't be string_view because str must be null terminated
 : Ip(s.c_str()) { }
 
 Ip::Ip(u32 ip) // ipv4
 : address{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF,
-		u8(ip), u8(ip >> 8), u8(ip >> 16), u8(ip >> 24)} { }
+		u8(ip), u8(ip >> 8), u8(ip >> 16), u8(ip >> 24)},
+  isIpv4Cache(true) { }
 
 Ip::Ip(std::array<u8, 16> ip)
-: address(std::move(ip)) { } // can't really move arrays
+: address(std::move(ip)), // can't really move arrays
+  isIpv4Cache(calculateIsIpv4()) { }
 
-Ip::Ip() { address.fill(0); }
+Ip::Ip()
+: isIpv4Cache(false) { address.fill(0); }
 
 bool Ip::isLocal() const {
 	static const Ip local("::1");
 	return *this == local || isIpv4() && (get4() & 0xFF) == 0x7F;
 }
 
-bool Ip::isIpv4() const {
+bool Ip::calculateIsIpv4() const {
 	static const std::array<u8, 12> prefix{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF};
 	for (int i = 0; i < prefix.size(); i++) { // should optimize?
 		if (address[i] != prefix[i]) {
@@ -48,6 +53,10 @@ bool Ip::isIpv4() const {
 	}
 
 	return true;
+}
+
+bool Ip::isIpv4() const {
+	return isIpv4Cache;
 }
 
 const std::array<u8, 16>& Ip::get() const {
@@ -92,6 +101,14 @@ std::string_view Ip::toString4() const {
 	}
 
 	return std::string_view(buf.data());
+}
+
+const char * Ip::data() const {
+	return reinterpret_cast<const char *>(isIpv4() ? address.data() + 12 : address.data());
+}
+
+sz_t Ip::dataSizeBytes() const {
+	return isIpv4() ? 4 : 16;
 }
 
 Ip Ip::fromString(const char * c, sz_t s) {
