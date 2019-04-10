@@ -82,15 +82,15 @@ getDataPointer(const T&) {
 	return nullptr;
 }
 
+template<sz_t N>
+const char * getDataPointer(const char(& arr)[N]) {
+	return &arr[0];
+}
+
 template<typename T>
 typename std::enable_if<is_optional<T>::value, const char *>::type
 getDataPointer(const T& value) {
 	return value ? getDataPointer(*value) : nullptr;
-}
-
-template<sz_t N>
-const char * getDataPointer(const char(& arr)[N]) {
-	return &arr[0];
 }
 
 template<typename T>
@@ -116,22 +116,22 @@ getSize(const T&) {
 	return 0;
 }
 
-template<typename T>
-typename std::enable_if<is_optional<T>::value, int>::type
-getSize(const T& value) {
-	return value ? getSize(*value) : 0;
-}
-
 template<sz_t N>
 int getSize(const char(& arr)[N]) {
 	return N - 1; // trim null terminator
 }
 
 template<typename T>
-typename std::enable_if<std::is_trivial<T>::value
-		&& !std::is_array<T>::value
+typename std::enable_if<is_optional<T>::value, int>::type
+getSize(const T& value) {
+	return value ? getSize(*value) : 0;
+}
+
+template<typename T>
+typename std::enable_if<std::is_arithmetic<T>::value
+/*		&& !std::is_array<T>::value
 		&& !is_std_array<T>::value
-		&& !std::is_null_pointer<T>::value, void>::type
+		&& !std::is_null_pointer<T>::value*/, void>::type
 byteSwap(T& value) {
 	switch (sizeof(T)) {
 		case 8:
@@ -149,20 +149,20 @@ byteSwap(T& value) {
 }
 
 template<typename T>
-typename std::enable_if<is_optional<T>::value
-		/*&& std::is_trivial<typename T::value_type>::value*/, void>::type
+typename std::enable_if<!std::is_arithmetic<T>::value
+/*		|| std::is_array<T>::value
+		|| is_std_array<T>::value
+		|| std::is_null_pointer<T>::value)*/
+		&& !is_optional<T>::value, void>::type
+byteSwap(T&) { }
+
+template<typename T>
+typename std::enable_if<is_optional<T>::value, void>::type
 byteSwap(T& value) {
 	if (value) {
 		byteSwap(*value);
 	}
 }
-
-template<typename T>
-typename std::enable_if<!std::is_trivial<T>::value
-		|| std::is_array<T>::value
-		|| is_std_array<T>::value
-		|| std::is_null_pointer<T>::value, void>::type
-byteSwap(T&) { }
 
 }
 
