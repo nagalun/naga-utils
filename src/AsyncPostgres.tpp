@@ -59,7 +59,8 @@ getValue(char * buf, sz_t size) {
 
 template<typename T>
 typename std::enable_if<!std::is_null_pointer<T>::value
-		&& !has_const_iterator<T>::value, const char *>::type
+		&& !has_const_iterator<T>::value
+		&& !is_optional<T>::value, const char *>::type
 getDataPointer(const T& value) {
 	if constexpr (has_data<T>::value && has_dataSizeBytes<T>::value) {
 		return value.data();
@@ -93,7 +94,8 @@ const char * getDataPointer(const char(& arr)[N]) {
 }
 
 template<typename T>
-typename std::enable_if<!has_const_iterator<T>::value, int>::type
+typename std::enable_if<!has_const_iterator<T>::value
+		&& !is_optional<T>::value, int>::type
 getSize(const T& value) {
 	if constexpr (has_data<T>::value && has_dataSizeBytes<T>::value) {
 		return value.dataSizeBytes();
