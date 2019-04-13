@@ -6,6 +6,10 @@
 
 template<typename T>
 typename std::enable_if<!std::is_same<T, bool>::value && std::is_integral<T>::value, T>::type
+fromString(std::string_view, int base);
+
+template<typename T>
+typename std::enable_if<!std::is_same<T, bool>::value && std::is_integral<T>::value, T>::type
 fromString(std::string_view);
 
 template<typename T>

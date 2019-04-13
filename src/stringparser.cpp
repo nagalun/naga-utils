@@ -8,17 +8,17 @@
 
 template<typename T>
 typename std::enable_if<!std::is_same<T, bool>::value && std::is_integral<T>::value, T>::type
-fromString(std::string_view s) {
+fromString(std::string_view s, int base) {
 	using L = std::numeric_limits<T>;
-	
+
 	if (s.size() == 0) {
 		throw std::invalid_argument("Improperly formatted argument");
 	}
 
 	typename std::conditional<L::is_signed, i64, u64>::type n;
-	auto res = std::from_chars(s.data(), s.data() + s.size(), n);
+	auto res = std::from_chars(s.data(), s.data() + s.size(), n, base);
 
-	if (res.ptr != s.data() + s.size()) { // contains extra data, or too big
+	if (res.ptr != s.data() + s.size() || res.ec == std::errc::invalid_argument || res.ec == std::errc::result_out_of_range) { // contains extra data, or too big
 		throw std::invalid_argument("Improperly formatted argument");
 	}
 
@@ -27,6 +27,12 @@ fromString(std::string_view s) {
 	}
 
 	return n;
+}
+
+template<typename T>
+typename std::enable_if<!std::is_same<T, bool>::value && std::is_integral<T>::value, T>::type
+fromString(std::string_view s) {
+	return fromString<T>(s, 10);
 }
 
 template<typename T>
@@ -89,6 +95,16 @@ fromString(std::string_view s) {
 
 
 // explicit instantiations
+template u8 fromString<u8>(std::string_view, int);
+template u16 fromString<u16>(std::string_view, int);
+template u32 fromString<u32>(std::string_view, int);
+template u64 fromString<u64>(std::string_view, int);
+
+template i8 fromString<i8>(std::string_view, int);
+template i16 fromString<i16>(std::string_view, int);
+template i32 fromString<i32>(std::string_view, int);
+template i64 fromString<i64>(std::string_view, int);
+
 template u8 fromString<u8>(std::string_view);
 template u16 fromString<u16>(std::string_view);
 template u32 fromString<u32>(std::string_view);
