@@ -65,7 +65,14 @@ getDataPointer(const T& value) {
 	if constexpr (has_data<T>::value && has_dataSizeBytes<T>::value) {
 		return value.data();
 	} else {
-		return reinterpret_cast<const char *>(&value);
+		static_assert(!std::is_class<T>::value,
+			"Class types must implement .data() and .dataSizeBytes() to be used in queries");
+		if constexpr (std::is_pointer<T>::value) {
+			// get pointer to the first element of the pointer, not the temporary variable
+			return reinterpret_cast<const char *>(&value[0]);
+		} else {
+			return reinterpret_cast<const char *>(&value);
+		}
 	}
 }
 
@@ -99,6 +106,10 @@ typename std::enable_if<!has_const_iterator<T>::value
 getSize(const T& value) {
 	if constexpr (has_data<T>::value && has_dataSizeBytes<T>::value) {
 		return value.dataSizeBytes();
+	} else if constexpr (std::is_pointer<T>::value) {
+		static_assert(std::is_same<T, const char *>::value,
+			"Use std::array or std::vector to pass non-text arrays!");
+		return strlen(value); // :(
 	} else {
 		return sizeof(T);
 	}
@@ -116,10 +127,10 @@ getSize(const T&) {
 	return 0;
 }
 
-template<sz_t N>
+/*template<sz_t N>
 int getSize(const char(& arr)[N]) {
 	return N - 1; // trim null terminator
-}
+}*/
 
 template<typename T>
 typename std::enable_if<is_optional<T>::value, int>::type

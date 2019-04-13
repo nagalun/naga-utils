@@ -8,6 +8,7 @@
 #include <iterator>
 #include <functional>
 #include <set>
+#include <type_traits>
 
 #include <fwd_uWS.h>
 #include <explints.hpp>
@@ -128,7 +129,8 @@ private:
 
 template<typename... Ts>
 class AsyncPostgres::TemplatedQuery : public AsyncPostgres::Query {
-	std::tuple<Ts...> valueStorage;
+	// we want to store the actual values, not references/pointers to them, so decay types
+	std::tuple<typename std::decay<Ts>::type...> valueStorage;
 	const char * realValues[sizeof... (Ts)];
 	const int realLengths[sizeof... (Ts)];
 	const int realFormats[sizeof... (Ts)];

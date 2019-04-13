@@ -2,6 +2,7 @@
 
 #include <string_view>
 #include <array>
+#include <vector>
 
 #include <explints.hpp>
 
@@ -28,8 +29,8 @@ public:
 	std::string_view toString6() const;
 	std::string_view toString4() const;
 
-	const char * data() const;
-	sz_t dataSizeBytes() const;
+	std::vector<u8> getPgData() const;
+
 	static Ip fromString(const char *, sz_t);
 
 	bool operator ==(const Ip&) const;

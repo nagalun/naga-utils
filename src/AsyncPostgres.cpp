@@ -142,6 +142,10 @@ void AsyncPostgres::setAutoReconnect(bool state) {
 }
 
 bool AsyncPostgres::cancelQuery(Query& q) {
+	if (q.isDone()) {
+		return false;
+	}
+	
 	auto it = q.getQueueIterator();
 	if (it == currentQuery && awaitingResponse) {
 		// query is already sent (or being sent) to postgres, cancel request might fail

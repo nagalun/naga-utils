@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <string.h>
 #include <stdexcept>
+#include <algorithm>
 
 #include <nlohmann/json.hpp>
 
@@ -103,13 +104,31 @@ std::string_view Ip::toString4() const {
 	return std::string_view(buf.data());
 }
 
-const char * Ip::data() const {
-	return reinterpret_cast<const char *>(isIpv4() ? address.data() + 12 : address.data());
+std::vector<u8> Ip::getPgData() const {
+	// family, mask, is_cidr, addr size, addr data...
+	std::array<u8, 1 + 1 + 1 + 1 + 16> ret;
+
+	ret[2] = false; // not CIDR data
+	auto firstIt = address.begin();
+
+	if (isIpv4()) {
+		ret[0] = AF_INET;
+		ret[1] = 32; // mask
+		ret[3] = 4; // byte size
+
+		firstIt += 12;
+		std::fill(ret.begin() + 4 + 4, ret.end(), 0);
+	} else {
+		ret[0] = AF_INET + 1; // IPv6 constant defined here: https://github.com/postgres/postgres/blob/master/src/port/inet_net_ntop.c#L43
+		ret[1] = 128;
+		ret[3] = 16;
+	}
+
+	auto lastIt = std::copy(firstIt, address.end(), ret.begin() + 4);
+
+	return std::vector<u8>(ret.begin(), lastIt);
 }
 
-sz_t Ip::dataSizeBytes() const {
-	return isIpv4() ? 4 : 16;
-}
 
 Ip Ip::fromString(const char * c, sz_t s) {
 	std::string str(c, s); // could not be null terminated
