@@ -334,7 +334,7 @@ void AsyncPostgres::socketCallback(AsyncPostgres * ap, PostgresSocket * ps, int 
 			}
 		}
 
-		if (PGnotify * p = PQnotifies(ap->pgConn.get())) {
+		while (PGnotify * p = PQnotifies(ap->pgConn.get())) {
 			ap->notifFunc(p);
 		}
 	}
