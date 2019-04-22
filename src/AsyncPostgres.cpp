@@ -6,6 +6,7 @@
 
 #include <explints.hpp>
 #include <TimedCallbacks.hpp>
+#include <utils.hpp>
 
 #include <uWS.h>
 
@@ -145,7 +146,7 @@ bool AsyncPostgres::cancelQuery(Query& q) {
 	if (q.isDone()) {
 		return false;
 	}
-	
+
 	auto it = q.getQueueIterator();
 	if (it == currentQuery && awaitingResponse) {
 		// query is already sent (or being sent) to postgres, cancel request might fail
@@ -443,6 +444,28 @@ AsyncPostgres::Result::Row::Row(PGresult * r, int i)
 int AsyncPostgres::Result::Row::getRow() { return rowIndex; }
 
 
+AsyncPostgres::Result::Row::ParseException::ParseException(std::vector<std::type_index> ts, std::type_index oldExc, std::string oldMsg)
+: message("Row::get<"),
+  triedTypes(std::move(ts)),
+  causingExceptionType(std::move(oldExc)),
+  causingWhat(std::move(oldMsg)) {
+	for (sz_t i = 0; i < triedTypes.size(); i++) {
+		message += demangle(triedTypes[i]);
+
+		if (i + 1 != triedTypes.size()) {
+			message += ", ";
+		}
+	}
+
+	message += ">() failed! Caused by: " + demangle(causingExceptionType) + ", what(): " + causingWhat;
+}
+
+const char * AsyncPostgres::Result::Row::ParseException::what() const noexcept {
+	return message.c_str();
+}
+
+
+
 AsyncPostgres::Result::iterator::iterator(PGresult * r, int i)
 : r(r),
   rowIndex(i) { }
@@ -456,6 +479,29 @@ AsyncPostgres::Result::iterator  AsyncPostgres::Result::iterator::operator++(int
 	auto it = *this;
 	++rowIndex;
 	return it;
+}
+
+AsyncPostgres::Result::iterator& AsyncPostgres::Result::iterator::operator--() {
+	--rowIndex;
+	return *this;
+}
+
+AsyncPostgres::Result::iterator  AsyncPostgres::Result::iterator::operator--(int) {
+	auto it = *this;
+	--rowIndex;
+	return it;
+}
+
+int AsyncPostgres::Result::iterator::operator-(iterator it) {
+	return rowIndex - it.rowIndex;
+}
+
+bool AsyncPostgres::Result::iterator::operator>(iterator it) const {
+	return rowIndex > it.rowIndex;
+}
+
+bool AsyncPostgres::Result::iterator::operator<(iterator it) const {
+	return rowIndex < it.rowIndex;
 }
 
 bool AsyncPostgres::Result::iterator::operator==(iterator it) const {

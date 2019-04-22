@@ -198,3 +198,8 @@ void urldecode(std::vector<std::string>& v) {
 		urldecode(s);
 	}
 }
+
+std::string mkurldecoded(std::string s) {
+	urldecode(s);
+	return s;
+}

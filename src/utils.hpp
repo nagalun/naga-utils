@@ -29,6 +29,7 @@ std::type_index strToType(const std::string& s);
 
 void urldecode(std::string&);
 void urldecode(std::vector<std::string>&);
+std::string mkurldecoded(std::string);
 
 // interestingly enough this doesn't cause linker errors
 constexpr u8 popc(u32 n) {

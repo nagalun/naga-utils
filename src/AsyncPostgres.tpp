@@ -213,15 +213,24 @@ void AsyncPostgres::Result::forEach(Func f) {
 
 template<typename Tuple, std::size_t... Is>
 Tuple AsyncPostgres::Result::Row::getImpl(std::index_sequence<Is...>) {
-	return {detail::getValue<typename std::tuple_element<Is, Tuple>::type>(
-		PQgetisnull(r, rowIndex, Is)
-		? nullptr
-		: PQgetvalue(r, rowIndex, Is),
-		PQgetlength(r, rowIndex, Is)
-	)...};
+	try {
+		return {detail::getValue<typename std::tuple_element<Is, Tuple>::type>(
+			PQgetisnull(r, rowIndex, Is)
+			? nullptr
+			: PQgetvalue(r, rowIndex, Is),
+			PQgetlength(r, rowIndex, Is)
+		)...};
+	} catch (const std::exception& e) {
+		throw ParseException({typeid(typename std::tuple_element<Is, Tuple>::type)...}, typeid(e), e.what());
+	}
 }
 
 template<typename... Ts>
 std::tuple<Ts...> AsyncPostgres::Result::Row::get() {
+	return getImpl<std::tuple<Ts...>>(std::index_sequence_for<Ts...>{});
+}
+
+template<typename... Ts>
+AsyncPostgres::Result::Row::operator std::tuple<Ts...>() {
 	return getImpl<std::tuple<Ts...>>(std::index_sequence_for<Ts...>{});
 }

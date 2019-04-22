@@ -9,6 +9,7 @@
 #include <functional>
 #include <set>
 #include <type_traits>
+#include <typeindex>
 
 #include <fwd_uWS.h>
 #include <explints.hpp>
@@ -170,6 +171,10 @@ public:
 };
 
 class AsyncPostgres::Result::Row {
+public:
+	class ParseException;
+
+private:
 	PGresult * r;
 	const int rowIndex;
 
@@ -179,6 +184,9 @@ public:
 	template<typename... Ts>
 	std::tuple<Ts...> get();
 
+	template<typename... Ts>
+	operator std::tuple<Ts...>();
+
 	int getRow();
 
 private:
@@ -186,6 +194,19 @@ private:
 	Tuple getImpl(std::index_sequence<Is...>);
 
 	friend AsyncPostgres::Result;
+};
+
+class AsyncPostgres::Result::Row::ParseException : public std::exception {
+	std::string message;
+
+public:
+	const std::vector<std::type_index> triedTypes;
+	const std::type_index causingExceptionType;
+	const std::string causingWhat;
+
+	ParseException(std::vector<std::type_index>, std::type_index, std::string);
+
+	virtual const char * what() const noexcept;
 };
 
 class AsyncPostgres::Result::iterator
@@ -203,6 +224,11 @@ public:
 	explicit iterator(PGresult *, int);
 	iterator& operator++();
 	iterator operator++(int);
+	iterator& operator--();
+	iterator operator--(int);
+	int operator-(iterator);
+	bool operator>(iterator) const;
+	bool operator<(iterator) const;
 	bool operator==(iterator) const;
 	bool operator!=(iterator) const;
 	reference operator*() const;
