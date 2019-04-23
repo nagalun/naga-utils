@@ -275,22 +275,34 @@ void AsyncPostgres::processNextCommand() {
 }
 
 // won't work yet with single row mode cb
-void AsyncPostgres::currentCommandFinished(PGresult * r) {
+void AsyncPostgres::currentCommandReturnedResult(PGresult * r, bool finished) {
 	// XXX: no check if empty, shouldn't happen anyways
-	(*currentQuery)->done(r);
-	queries.erase(currentQuery);
+	if (finished) {
+		(*currentQuery)->done(Result(r, nullptr));
+		queries.erase(currentQuery);
 
-	awaitingResponse = false;
-	currentQuery = queries.end();
-	signalCompletion();
+		awaitingResponse = false;
+		currentQuery = queries.end();
+		signalCompletion();
+	} else {
+		// the connection pointer is needed to copy data
+		(*currentQuery)->done(Result(r, pgConn.get()));
+	}
 }
 
 void AsyncPostgres::manageSocketEvents(bool needsWrite) {
 	if (!PQisBusy(pgConn.get())) {
 		while (PGresult * r = PQgetResult(pgConn.get())) {
+			bool finished = true;
+
 			ExecStatusType s = PQresultStatus(r);
 			//std::cout << "Popcb " << PQresStatus(s) << std::endl;
 			switch (s) { // FIXME?: make it possible to enable single row mode
+				case PGRES_COPY_IN:
+				case PGRES_COPY_OUT:
+					finished = false; // user has to copy data still
+					break;
+
 				case PGRES_BAD_RESPONSE:
 				case PGRES_FATAL_ERROR:
 					std::cerr << "[Postgre/manageSocketEvents()]: Bad result status " << PQresStatus(s) << std::endl;
@@ -298,7 +310,7 @@ void AsyncPostgres::manageSocketEvents(bool needsWrite) {
 					break;
 			}
 
-			currentCommandFinished(r);
+			currentCommandReturnedResult(r, finished);
 		}
 	}
 
@@ -365,7 +377,7 @@ AsyncPostgres::Query::Query(int prio, std::string cmd, const char ** vals, const
 AsyncPostgres::Query::~Query() {
 	if (onDone) {
 		// tell callback we couldn't complete the request
-		onDone(AsyncPostgres::Result(nullptr));
+		onDone(AsyncPostgres::Result(nullptr, nullptr));
 	}
 }
 
@@ -392,8 +404,11 @@ int AsyncPostgres::Query::send(PGconn * conn) {
 
 void AsyncPostgres::Query::done(AsyncPostgres::Result r) {
 	if (onDone) {
+		bool more = r.expectMoreResults();
 		onDone(std::move(r));
-		onDone = nullptr; // make it impossible to double-complete
+		if (!more) {
+			onDone = nullptr; // make it impossible to double-complete
+		}
 	}
 }
 
@@ -405,8 +420,9 @@ void AsyncPostgres::Query::setQueueIterator(AsyncPostgres::QueryQueue::const_ite
 	queue_it = it;
 }
 
-AsyncPostgres::Result::Result(PGresult * r)
-: pgResult(r, PQclear) { }
+AsyncPostgres::Result::Result(PGresult * r, PGconn * c)
+: pgResult(r, PQclear),
+  conn(c) { }
 
 sz_t AsyncPostgres::Result::size() const {
 	return pgResult ? PQntuples(pgResult.get()) : 0;
@@ -417,9 +433,9 @@ sz_t AsyncPostgres::Result::rowSize() const {
 }
 
 bool AsyncPostgres::Result::success() const {
-	if (!pgResult.get()) { return false; }
-
-	switch (PQresultStatus(pgResult.get())) {
+	switch (getStatus()) {
+		case PGRES_COPY_OUT:
+		case PGRES_COPY_IN:
 		case PGRES_COMMAND_OK:
 		case PGRES_TUPLES_OK:
 		case PGRES_SINGLE_TUPLE:
@@ -428,6 +444,48 @@ bool AsyncPostgres::Result::success() const {
 
 	return false;
 }
+
+bool AsyncPostgres::Result::expectMoreResults() const {
+	switch (getStatus()) {
+		case PGRES_COPY_OUT:
+		case PGRES_COPY_IN:
+		case PGRES_SINGLE_TUPLE:
+			return true;
+	}
+
+	return false;
+}
+
+ExecStatusType AsyncPostgres::Result::getStatus() const {
+	return pgResult ? PQresultStatus(pgResult.get()) : PGRES_BAD_RESPONSE;
+}
+
+bool AsyncPostgres::Result::canCopyTo() const {
+	return getStatus() == PGRES_COPY_IN;
+}
+
+bool AsyncPostgres::Result::blockingCopy(const char * buffer, sz_t nbytes) {
+	if (PQsetnonblocking(conn, false) == -1) {
+		return false;
+	}
+
+	int s = PQputCopyData(conn, buffer, nbytes);
+
+	PQsetnonblocking(conn, true); // this should never return -1
+	return s == 1;
+}
+
+bool AsyncPostgres::Result::blockingCopyEnd(const char * err) {
+	if (PQsetnonblocking(conn, false) == -1) {
+		return false;
+	}
+
+	int s = PQputCopyEnd(conn, err);
+
+	PQsetnonblocking(conn, true);
+	return s == 1;
+}
+
 
 AsyncPostgres::Result::iterator AsyncPostgres::Result::begin() { return iterator(pgResult.get(), 0); }
 AsyncPostgres::Result::iterator AsyncPostgres::Result::end()   { return iterator(pgResult.get(), size()); }

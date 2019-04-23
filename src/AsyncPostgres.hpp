@@ -86,7 +86,7 @@ private:
 
 	void signalCompletion();
 	void processNextCommand();
-	void currentCommandFinished(PGresult *);
+	void currentCommandReturnedResult(PGresult *, bool);
 	void manageSocketEvents(bool);
 
 	std::string_view getLastErrorFirstLine();
@@ -150,13 +150,20 @@ public:
 
 private:
 	std::unique_ptr<PGresult, void (*)(PGresult *)> pgResult;
+	PGconn * conn;
 
-	Result(PGresult *);
+	Result(PGresult *, PGconn *);
 
 public:
 	sz_t size() const;
 	sz_t rowSize() const;
 	bool success() const;
+	bool expectMoreResults() const;
+	ExecStatusType getStatus() const;
+	bool canCopyTo() const;
+
+	bool blockingCopy(const char *, sz_t);
+	bool blockingCopyEnd(const char * err = nullptr);
 
 	iterator begin();
 	iterator end();
