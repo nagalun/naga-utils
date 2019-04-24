@@ -7,6 +7,7 @@
 #include <explints.hpp>
 #include <TimedCallbacks.hpp>
 #include <utils.hpp>
+#include <stringparser.hpp>
 
 #include <uWS.h>
 
@@ -423,6 +424,12 @@ void AsyncPostgres::Query::setQueueIterator(AsyncPostgres::QueryQueue::const_ite
 AsyncPostgres::Result::Result(PGresult * r, PGconn * c)
 : pgResult(r, PQclear),
   conn(c) { }
+
+sz_t AsyncPostgres::Result::numAffected() const {
+	std::string_view affected(PQcmdTuples(pgResult.get()));
+
+	return affected.size() ? fromString<sz_t>(affected) : 0;
+}
 
 sz_t AsyncPostgres::Result::size() const {
 	return pgResult ? PQntuples(pgResult.get()) : 0;

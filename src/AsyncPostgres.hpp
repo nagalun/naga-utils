@@ -155,6 +155,7 @@ private:
 	Result(PGresult *, PGconn *);
 
 public:
+	sz_t numAffected() const;
 	sz_t size() const;
 	sz_t rowSize() const;
 	bool success() const;
