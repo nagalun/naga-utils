@@ -44,6 +44,26 @@ bool fileExists(const std::string& path) {
 #endif
 }
 
+bool processExists(int pid) {
+#ifndef __WIN32
+	return fileExists("/proc/" + std::to_string(pid));
+#else
+	HANDLE proc = OpenProcess(0, FALSE, pid);
+	if (!proc) {
+		return false;
+	}
+
+	LPDWORD ecode;
+	if (!GetExitCodeProcess(proc, &ecode)) {
+		return false;
+	}
+
+	CloseHandle(proc);
+	return ecode == STILL_ACTIVE;
+#endif
+}
+
+
 sz_t getUtf8StrLen(const std::string& str) {
 	sz_t j = 0, i = 0, x = 1;
 	while (i < str.size()) {

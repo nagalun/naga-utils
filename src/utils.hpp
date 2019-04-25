@@ -12,6 +12,8 @@ sz_t getUtf8StrLen(const std::string&);
 bool makeDir(const std::string&);
 bool fileExists(const std::string&);
 
+bool processExists(int pid);
+
 i64 jsDateNow();
 std::vector<std::string_view> tokenize(std::string_view, char delimiter = ' ', bool trimEmpty = false);
 
