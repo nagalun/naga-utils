@@ -44,6 +44,28 @@ bool fileExists(const std::string& path) {
 #endif
 }
 
+std::string_view getUsername() {
+	// the variable is called USER on Linux, and USERNAME on Windows
+	return getenv(
+		"USER"
+#ifdef __WIN32
+		"NAME"
+#endif
+	);
+}
+
+std::string_view getHostname() {
+	// the variable is called HOSTNAME on Linux, and COMPUTERNAME on Windows
+	return getenv(
+#ifdef __WIN32
+		"COMPUTER"
+#else
+		"HOST"
+#endif
+		"NAME"
+	);
+}
+
 bool processExists(int pid) {
 #ifndef __WIN32
 	return fileExists("/proc/" + std::to_string(pid));

@@ -1,7 +1,12 @@
 #include "AsyncHttp.hpp"
 
+#include <algorithm>
+#include <memory>
+#include <iostream>
+
 #include <uWS.h>
 #include <curl/curl.h>
+#include <utils.hpp>
 
 /* FIXME: Name resolves seem to be blocking (see: c-ares) */
 
@@ -22,6 +27,10 @@ static struct CurlRaii {
 	~CurlRaii() { curl_global_cleanup(); }
 } autoCleanup;
 
+static int noopWriter(char *, std::size_t s, std::size_t n, void *) { return s * n; }
+static int noopReader(char *, std::size_t, std::size_t, void *) { return 0; }
+
+
 inline int curlEvToUv(int curlEvents) {
 	return (curlEvents & CURL_POLL_IN ? UV_READABLE : 0)
 		| (curlEvents & CURL_POLL_OUT ? UV_WRITABLE : 0);
@@ -35,21 +44,46 @@ inline int uvEvToCurl(int uvEvents) {
 class CurlHandle {
 	CURLM * multiHandle;
 	CURL * easyHandle;
+
+protected:
 	std::function<void(AsyncHttp::Result)> onFinished;
-	std::string buffer;
 
 public:
-	CurlHandle(CURLM *, std::string, std::unordered_map<std::string, std::string>,
-			std::function<void(AsyncHttp::Result)>);
-	~CurlHandle();
+	CurlHandle(CURLM *, std::function<void(AsyncHttp::Result)>);
+	virtual ~CurlHandle();
 
 	CURL * getHandle();
 
 private:
-	bool finished(CURLcode result); /* Returns false if error occurred */
-	static int writer(char *, std::size_t, std::size_t, std::string *);
+	virtual bool finished(CURLcode result) = 0; /* Returns false if error occurred */
 
 	friend AsyncHttp;
+};
+
+class CurlHttpHandle : public CurlHandle {
+	std::string writeBuffer;
+
+public:
+	CurlHttpHandle(CURLM *, std::string, std::unordered_map<std::string_view, std::string_view>,
+		std::function<void(AsyncHttp::Result)>);
+
+private:
+	bool finished(CURLcode result);
+	static sz_t writer(char *, std::size_t, std::size_t, std::string *);
+};
+
+class CurlSmtpHandle : public CurlHandle {
+	std::string readBuffer;
+	std::unique_ptr<curl_slist, void(*)(curl_slist *)> mailRcpts;
+	sz_t amountSent;
+
+public:
+	CurlSmtpHandle(CURLM *, const std::string& url, const std::string& from, const std::string& to,
+		const std::string& subject, const std::string& message, std::function<void(AsyncHttp::Result)>);
+
+private:
+	bool finished(CURLcode result);
+	static sz_t reader(char *, std::size_t, std::size_t, CurlSmtpHandle *);
 };
 
 class CurlSocket : public uS::Poll {
@@ -89,8 +123,7 @@ AsyncHttp::Result::Result(long httpResp, std::string data, const char * err)
   data(std::move(data)),
   errorString(err) { }
 
-CurlHandle::CurlHandle(CURLM * mHdl, std::string url,
-		std::unordered_map<std::string, std::string> params, std::function<void(AsyncHttp::Result)> cb)
+CurlHandle::CurlHandle(CURLM * mHdl, std::function<void(AsyncHttp::Result)> cb)
 : multiHandle(mHdl),
   easyHandle(curl_easy_init()),
   onFinished(std::move(cb)) {
@@ -98,23 +131,9 @@ CurlHandle::CurlHandle(CURLM * mHdl, std::string url,
 		throw std::bad_alloc();
 	}
 
-	bool first = true;
-	for (const auto& param : params) {
-		url += first ? '?' : '&';
-		first = false;
-		url += param.first; // should this be escaped as well?
-		url += '=';
-		// lots of allocs can happen here, bad!
-		char * escaped = curl_easy_escape(easyHandle, param.second.c_str(), param.second.size());
-		if (!escaped) { throw std::bad_alloc(); }
-		url += escaped;
-		curl_free(escaped);
-	}
-
 	ec(curl_easy_setopt(easyHandle, CURLOPT_PRIVATE, this));
-	ec(curl_easy_setopt(easyHandle, CURLOPT_WRITEFUNCTION, &CurlHandle::writer));
-	ec(curl_easy_setopt(easyHandle, CURLOPT_WRITEDATA, &buffer));
-	ec(curl_easy_setopt(easyHandle, CURLOPT_URL, url.c_str()));
+	ec(curl_easy_setopt(easyHandle, CURLOPT_WRITEFUNCTION, noopWriter));
+	ec(curl_easy_setopt(easyHandle, CURLOPT_READFUNCTION, noopReader));
 
 	//ec(curl_easy_setopt(easyHandle, CURLOPT_TIMEOUT, 60)); // idk if this caused any problems
 	//ec(curl_easy_setopt(easyHandle, CURLOPT_TCP_FASTOPEN, 1)); // makes http requests fail?
@@ -134,22 +153,100 @@ CURL * CurlHandle::getHandle() {
 	return easyHandle;
 }
 
-bool CurlHandle::finished(CURLcode result) {
+
+CurlHttpHandle::CurlHttpHandle(CURLM * mHdl, std::string url, std::unordered_map<std::string_view, std::string_view> params, std::function<void(AsyncHttp::Result)> cb)
+: CurlHandle(mHdl, std::move(cb)) {
+	bool first = true;
+	for (const auto& param : params) {
+		url += first ? '?' : '&';
+		first = false;
+		url += param.first; // should this be escaped as well?
+		url += '=';
+		// lots of allocs can happen here, bad!
+		char * escaped = curl_easy_escape(getHandle(), param.second.data(), param.second.size());
+		if (!escaped) { throw std::bad_alloc(); }
+		url += escaped;
+		curl_free(escaped);
+	}
+
+	ec(curl_easy_setopt(getHandle(), CURLOPT_WRITEFUNCTION, &CurlHttpHandle::writer));
+	ec(curl_easy_setopt(getHandle(), CURLOPT_WRITEDATA, &writeBuffer));
+	ec(curl_easy_setopt(getHandle(), CURLOPT_URL, url.c_str()));
+}
+
+bool CurlHttpHandle::finished(CURLcode result) {
 	bool successful = result == CURLE_OK;
 	long responseCode = -1;
-	ec(curl_easy_getinfo(easyHandle, CURLINFO_RESPONSE_CODE, &responseCode));
+	ec(curl_easy_getinfo(getHandle(), CURLINFO_RESPONSE_CODE, &responseCode));
 
-	onFinished({responseCode, std::move(buffer),
+	onFinished({responseCode, std::move(writeBuffer),
 			successful ? nullptr : curl_easy_strerror(result)});
 
 	return successful;
 }
 
-int CurlHandle::writer(char * data, std::size_t size, std::size_t nmemb, std::string * writerData) {
+sz_t CurlHttpHandle::writer(char * data, std::size_t size, std::size_t nmemb, std::string * writerData) {
 	// writerData will never be null
 	writerData->append(data, size * nmemb);
 
 	return size * nmemb;
+}
+
+CurlSmtpHandle::CurlSmtpHandle(CURLM * mHdl, const std::string& url, const std::string& from, const std::string& to,
+		const std::string& subject, const std::string& message, std::function<void(AsyncHttp::Result)> cb)
+: CurlHandle(mHdl, std::move(cb)),
+  mailRcpts(curl_slist_append(nullptr, to.c_str()), curl_slist_free_all),
+  amountSent(0) {
+	CURL * curl = getHandle();
+	ec(curl_easy_setopt(curl, CURLOPT_URL, url.c_str()));
+	ec(curl_easy_setopt(curl, CURLOPT_MAIL_FROM, from.c_str()));
+	ec(curl_easy_setopt(curl, CURLOPT_MAIL_RCPT, mailRcpts.get()));
+
+	ec(curl_easy_setopt(curl, CURLOPT_READFUNCTION, &CurlSmtpHandle::reader));
+	ec(curl_easy_setopt(curl, CURLOPT_READDATA, this));
+
+	ec(curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L));
+
+	readBuffer.reserve(from.size() + to.size() + subject.size() + message.size() + 24 + 6);
+
+	readBuffer += "From: ";
+	readBuffer += from;
+	readBuffer += '\n';
+
+	readBuffer += "To: ";
+	readBuffer += to;
+	readBuffer += '\n';
+
+	readBuffer += "Subject: ";
+	readBuffer += subject;
+	readBuffer += '\n';
+
+	readBuffer += '\n';
+
+	readBuffer += message;
+
+	std::cout << "sending to " << url << ":" << from << ":" << to << ":" << subject << std::endl;
+	std::cout << readBuffer << std::endl;
+}
+
+bool CurlSmtpHandle::finished(CURLcode result) {
+	bool successful = result == CURLE_OK;
+	long responseCode = -1;
+	ec(curl_easy_getinfo(getHandle(), CURLINFO_RESPONSE_CODE, &responseCode));
+
+	onFinished({responseCode, {}, successful ? nullptr : curl_easy_strerror(result)});
+
+	return successful;
+}
+
+sz_t CurlSmtpHandle::reader(char * buf, std::size_t size, std::size_t nmemb, CurlSmtpHandle * d) {
+	sz_t off = d->amountSent;
+	sz_t toRead = std::min(size * nmemb, d->readBuffer.size() - off);
+
+	std::copy_n(d->readBuffer.c_str() + off, toRead, buf);
+
+	d->amountSent += toRead;
+	return toRead;
 }
 
 AsyncHttp::AsyncHttp(uS::Loop * loop)
@@ -242,13 +339,25 @@ int AsyncHttp::queuedRequests() const {
 	return pendingRequests.size();
 }
 
-void AsyncHttp::addRequest(std::string url, std::unordered_map<std::string, std::string> params,
-		std::function<void(AsyncHttp::Result)> onFinished) {
-	pendingRequests.emplace(new CurlHandle(multiHandle, std::move(url), std::move(params), std::move(onFinished)));
+void AsyncHttp::smtpSendMail(const std::string& url, const std::string& from, const std::string& to,
+		const std::string& subject, const std::string& message, std::function<void(AsyncHttp::Result)> onFinished) {
+	pendingRequests.emplace(new CurlSmtpHandle(multiHandle, url,
+		from, to, subject, message, std::move(onFinished)));
 }
 
-void AsyncHttp::addRequest(std::string url, std::function<void(AsyncHttp::Result)> onFinished) {
-	addRequest(std::move(url), {}, std::move(onFinished));
+void AsyncHttp::smtpSendMail(const std::string& url, const std::string& to, const std::string& subject,
+		const std::string& message, std::function<void(AsyncHttp::Result)> onFinished) {
+	static const std::string self = std::string(getUsername()) + "@" + std::string(getHostname());
+	smtpSendMail(url, self, to, subject, message, std::move(onFinished));
+}
+
+void AsyncHttp::httpGet(std::string url, std::unordered_map<std::string_view, std::string_view> params,
+		std::function<void(AsyncHttp::Result)> onFinished) {
+	pendingRequests.emplace(new CurlHttpHandle(multiHandle, std::move(url), std::move(params), std::move(onFinished)));
+}
+
+void AsyncHttp::httpGet(std::string url, std::function<void(AsyncHttp::Result)> onFinished) {
+	httpGet(std::move(url), {}, std::move(onFinished));
 }
 
 void AsyncHttp::update() {

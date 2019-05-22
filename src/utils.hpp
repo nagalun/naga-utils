@@ -12,6 +12,8 @@ sz_t getUtf8StrLen(const std::string&);
 bool makeDir(const std::string&);
 bool fileExists(const std::string&);
 
+std::string_view getUsername();
+std::string_view getHostname();
 bool processExists(int pid);
 
 i64 jsDateNow();

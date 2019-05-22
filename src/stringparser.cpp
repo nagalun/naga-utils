@@ -4,7 +4,9 @@
 #include <type_traits>
 #include <limits>
 #include <charconv>
+
 #include <explints.hpp>
+#include <utils.hpp>
 
 template<typename T>
 typename std::enable_if<!std::is_same<T, bool>::value && std::is_integral<T>::value, T>::type
@@ -12,18 +14,18 @@ fromString(std::string_view s, int base) {
 	using L = std::numeric_limits<T>;
 
 	if (s.size() == 0) {
-		throw std::invalid_argument("Improperly formatted argument");
+		throw std::invalid_argument("Improperly formatted argument (" + demangle(typeid(T)) + ")");
 	}
 
 	typename std::conditional<L::is_signed, i64, u64>::type n;
 	auto res = std::from_chars(s.data(), s.data() + s.size(), n, base);
 
 	if (res.ptr != s.data() + s.size() || res.ec == std::errc::invalid_argument || res.ec == std::errc::result_out_of_range) { // contains extra data, or too big
-		throw std::invalid_argument("Improperly formatted argument");
+		throw std::invalid_argument("Improperly formatted argument (" + demangle(typeid(T)) + ")");
 	}
 
 	if (n > L::max() || n < L::min()) {
-		throw std::out_of_range("Value too big/small");
+		throw std::out_of_range("Value too big/small (" + demangle(typeid(T)) + ")");
 	}
 
 	return n;
@@ -63,7 +65,7 @@ template<typename T>
 typename std::enable_if<std::is_floating_point<T>::value, T>::type
 fromString(std::string_view s) {
 	if (s.size() == 0) {
-		throw std::invalid_argument("Improperly formatted argument");
+		throw std::invalid_argument("Improperly formatted argument (" + demangle(typeid(T)) + ")");
 	}
 
 	std::string str(s.data(), s.size()); // NOTE: can't guarantee s is null terminated, and from_chars is not implemented for floating point
@@ -80,7 +82,7 @@ fromString(std::string_view s) {
 	}
 
 	if (proc != s.size()) { // contains extra data?
-		throw std::invalid_argument("Improperly formatted argument");
+		throw std::invalid_argument("Improperly formatted argument (" + demangle(typeid(T)) + ")");
 	}
 
 	/*auto res = std::from_chars(s.data(), s.data() + s.size(), n);
