@@ -46,10 +46,10 @@ class CurlHandle {
 	CURL * easyHandle;
 
 protected:
-	std::function<void(AsyncHttp::Result)> onFinished;
+	std::function<void(AsyncCurl::Result)> onFinished;
 
 public:
-	CurlHandle(CURLM *, std::function<void(AsyncHttp::Result)>);
+	CurlHandle(CURLM *, std::function<void(AsyncCurl::Result)>);
 	virtual ~CurlHandle();
 
 	CURL * getHandle();
@@ -57,7 +57,7 @@ public:
 private:
 	virtual bool finished(CURLcode result) = 0; /* Returns false if error occurred */
 
-	friend AsyncHttp;
+	friend AsyncCurl;
 };
 
 class CurlHttpHandle : public CurlHandle {
@@ -65,7 +65,7 @@ class CurlHttpHandle : public CurlHandle {
 
 public:
 	CurlHttpHandle(CURLM *, std::string, std::unordered_map<std::string_view, std::string_view>,
-		std::function<void(AsyncHttp::Result)>);
+		std::function<void(AsyncCurl::Result)>);
 
 private:
 	bool finished(CURLcode result);
@@ -79,7 +79,7 @@ class CurlSmtpHandle : public CurlHandle {
 
 public:
 	CurlSmtpHandle(CURLM *, const std::string& url, const std::string& from, const std::string& to,
-		const std::string& subject, const std::string& message, std::function<void(AsyncHttp::Result)>);
+		const std::string& subject, const std::string& message, std::function<void(AsyncCurl::Result)>);
 
 private:
 	bool finished(CURLcode result);
@@ -87,15 +87,15 @@ private:
 };
 
 class CurlSocket : public uS::Poll {
-	AsyncHttp * ah;
-	void (*cb)(AsyncHttp *, CurlSocket *, int, int);
+	AsyncCurl * ah;
+	void (*cb)(AsyncCurl *, CurlSocket *, int, int);
 
 public:
-	CurlSocket(uS::Loop * loop, AsyncHttp * ah, curl_socket_t fd)
+	CurlSocket(uS::Loop * loop, AsyncCurl * ah, curl_socket_t fd)
 	: Poll(loop, static_cast<int>(fd)),
 	  ah(ah) { }
 
-	void start(uS::Loop * loop, int events, void (*callback)(AsyncHttp *, CurlSocket *, int status, int events)) {
+	void start(uS::Loop * loop, int events, void (*callback)(AsyncCurl *, CurlSocket *, int status, int events)) {
 		cb = callback;
 		Poll::setCb([] (Poll * p, int s, int e) {
 			CurlSocket * cs = static_cast<CurlSocket *>(p);
@@ -117,13 +117,13 @@ public:
 	}
 };
 
-AsyncHttp::Result::Result(long httpResp, std::string data, const char * err)
+AsyncCurl::Result::Result(long httpResp, std::string data, const char * err)
 : successful(err == nullptr),
   responseCode(httpResp),
   data(std::move(data)),
   errorString(err) { }
 
-CurlHandle::CurlHandle(CURLM * mHdl, std::function<void(AsyncHttp::Result)> cb)
+CurlHandle::CurlHandle(CURLM * mHdl, std::function<void(AsyncCurl::Result)> cb)
 : multiHandle(mHdl),
   easyHandle(curl_easy_init()),
   onFinished(std::move(cb)) {
@@ -154,7 +154,7 @@ CURL * CurlHandle::getHandle() {
 }
 
 
-CurlHttpHandle::CurlHttpHandle(CURLM * mHdl, std::string url, std::unordered_map<std::string_view, std::string_view> params, std::function<void(AsyncHttp::Result)> cb)
+CurlHttpHandle::CurlHttpHandle(CURLM * mHdl, std::string url, std::unordered_map<std::string_view, std::string_view> params, std::function<void(AsyncCurl::Result)> cb)
 : CurlHandle(mHdl, std::move(cb)) {
 	bool first = true;
 	for (const auto& param : params) {
@@ -193,7 +193,7 @@ sz_t CurlHttpHandle::writer(char * data, std::size_t size, std::size_t nmemb, st
 }
 
 CurlSmtpHandle::CurlSmtpHandle(CURLM * mHdl, const std::string& url, const std::string& from, const std::string& to,
-		const std::string& subject, const std::string& message, std::function<void(AsyncHttp::Result)> cb)
+		const std::string& subject, const std::string& message, std::function<void(AsyncCurl::Result)> cb)
 : CurlHandle(mHdl, std::move(cb)),
   mailRcpts(curl_slist_append(nullptr, to.c_str()), curl_slist_free_all),
   amountSent(0) {
@@ -249,7 +249,7 @@ sz_t CurlSmtpHandle::reader(char * buf, std::size_t size, std::size_t nmemb, Cur
 	return toRead;
 }
 
-AsyncHttp::AsyncHttp(uS::Loop * loop)
+AsyncCurl::AsyncCurl(uS::Loop * loop)
 : loop(loop),
   timer(new uS::Timer(loop)),
   multiHandle(curl_multi_init()),
@@ -269,7 +269,7 @@ AsyncHttp::AsyncHttp(uS::Loop * loop)
 	mc(curl_multi_setopt(multiHandle, CURLMOPT_TIMERDATA, this));
 	mc(curl_multi_setopt(multiHandle, CURLMOPT_TIMERFUNCTION, +[] (CURLM * multi, long tmo_ms, void * u) -> int {
 		// notice the plus sign on the lambda definition, needed to get the pointer to it
-		AsyncHttp * ah = static_cast<AsyncHttp *>(u);
+		AsyncCurl * ah = static_cast<AsyncCurl *>(u);
 		switch (tmo_ms) {
 			case -1:
 				ah->stopTimer();
@@ -290,7 +290,7 @@ AsyncHttp::AsyncHttp(uS::Loop * loop)
 	mc(curl_multi_setopt(multiHandle, CURLMOPT_SOCKETDATA, this));
 	mc(curl_multi_setopt(multiHandle, CURLMOPT_SOCKETFUNCTION, +[] (CURL * e, curl_socket_t s, int what, void * up, void * sp) -> int {
 		// listen for event what on socket s of easy handle e, s priv data on sp
-		AsyncHttp * ah = static_cast<AsyncHttp *>(up);
+		AsyncCurl * ah = static_cast<AsyncCurl *>(up);
 		CurlSocket * cs = static_cast<CurlSocket *>(sp);
 
 		if (what == CURL_POLL_REMOVE) {
@@ -301,7 +301,7 @@ AsyncHttp::AsyncHttp(uS::Loop * loop)
 		} else {
 			if (!cs) {
 				cs = new CurlSocket(ah->loop, ah, s);
-				cs->start(ah->loop, what, +[] (AsyncHttp * ah, CurlSocket * cs, int status, int events) {
+				cs->start(ah->loop, what, +[] (AsyncCurl * ah, CurlSocket * cs, int status, int events) {
 					mc(curl_multi_socket_action(ah->multiHandle, reinterpret_cast<curl_socket_t>(cs->getFd()), events, &ah->handleCount));
 					ah->processCompleted();
 
@@ -320,7 +320,7 @@ AsyncHttp::AsyncHttp(uS::Loop * loop)
 	}));
 }
 
-AsyncHttp::~AsyncHttp() {
+AsyncCurl::~AsyncCurl() {
 	stopTimer();
 	timer->close(); /* This deletes the timer */
 
@@ -331,41 +331,41 @@ AsyncHttp::~AsyncHttp() {
 	mc(curl_multi_cleanup(multiHandle));
 }
 
-int AsyncHttp::activeHandles() const {
+int AsyncCurl::activeHandles() const {
 	return handleCount;
 }
 
-int AsyncHttp::queuedRequests() const {
+int AsyncCurl::queuedRequests() const {
 	return pendingRequests.size();
 }
 
-void AsyncHttp::smtpSendMail(const std::string& url, const std::string& from, const std::string& to,
-		const std::string& subject, const std::string& message, std::function<void(AsyncHttp::Result)> onFinished) {
+void AsyncCurl::smtpSendMail(const std::string& url, const std::string& from, const std::string& to,
+		const std::string& subject, const std::string& message, std::function<void(AsyncCurl::Result)> onFinished) {
 	pendingRequests.emplace(new CurlSmtpHandle(multiHandle, url,
 		from, to, subject, message, std::move(onFinished)));
 }
 
-void AsyncHttp::smtpSendMail(const std::string& url, const std::string& to, const std::string& subject,
-		const std::string& message, std::function<void(AsyncHttp::Result)> onFinished) {
+void AsyncCurl::smtpSendMail(const std::string& url, const std::string& to, const std::string& subject,
+		const std::string& message, std::function<void(AsyncCurl::Result)> onFinished) {
 	static const std::string self = std::string(getUsername()) + "@" + std::string(getHostname());
 	smtpSendMail(url, self, to, subject, message, std::move(onFinished));
 }
 
-void AsyncHttp::httpGet(std::string url, std::unordered_map<std::string_view, std::string_view> params,
-		std::function<void(AsyncHttp::Result)> onFinished) {
+void AsyncCurl::httpGet(std::string url, std::unordered_map<std::string_view, std::string_view> params,
+		std::function<void(AsyncCurl::Result)> onFinished) {
 	pendingRequests.emplace(new CurlHttpHandle(multiHandle, std::move(url), std::move(params), std::move(onFinished)));
 }
 
-void AsyncHttp::httpGet(std::string url, std::function<void(AsyncHttp::Result)> onFinished) {
+void AsyncCurl::httpGet(std::string url, std::function<void(AsyncCurl::Result)> onFinished) {
 	httpGet(std::move(url), {}, std::move(onFinished));
 }
 
-void AsyncHttp::update() {
+void AsyncCurl::update() {
 	mc(curl_multi_socket_action(multiHandle, CURL_SOCKET_TIMEOUT, 0, &handleCount));
 	processCompleted();
 }
 
-void AsyncHttp::processCompleted() {
+void AsyncCurl::processCompleted() {
 	int queued;
 	CurlHandle * hdl;
 
@@ -385,26 +385,26 @@ void AsyncHttp::processCompleted() {
 	}
 }
 
-void AsyncHttp::startTimer(long timeout) {
+void AsyncCurl::startTimer(long timeout) {
 	if (isTimerRunning) {
 		stopTimer();
 	}
 
 	if (!isTimerRunning) {
-		timer->start(&AsyncHttp::timerCallback, timeout, timeout);
+		timer->start(&AsyncCurl::timerCallback, timeout, timeout);
 		isTimerRunning = true;
 	}
 }
 
-void AsyncHttp::stopTimer() {
+void AsyncCurl::stopTimer() {
 	if (isTimerRunning) {
 		timer->stop();
 		isTimerRunning = false;
 	}
 }
 
-void AsyncHttp::timerCallback(uS::Timer * timer) {
-	AsyncHttp * const http = static_cast<AsyncHttp *>(timer->getData());
+void AsyncCurl::timerCallback(uS::Timer * timer) {
+	AsyncCurl * const http = static_cast<AsyncCurl *>(timer->getData());
 	http->stopTimer();
 	http->update();
 }

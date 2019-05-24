@@ -12,7 +12,7 @@
 class CurlSocket;
 class CurlHandle;
 
-class AsyncHttp {
+class AsyncCurl {
 public:
 	class Result;
 
@@ -25,17 +25,17 @@ private:
 	bool isTimerRunning;
 
 public:
-	AsyncHttp(uS::Loop *);
-	~AsyncHttp();
+	AsyncCurl(uS::Loop *);
+	~AsyncCurl();
 
 	int activeHandles() const;
 	int queuedRequests() const;
 
-	void smtpSendMail(const std::string& url, const std::string& from, const std::string& to, const std::string& subject, const std::string& message, std::function<void(AsyncHttp::Result)>);
-	void smtpSendMail(const std::string& url, const std::string& to, const std::string& subject, const std::string& message, std::function<void(AsyncHttp::Result)>);
+	void smtpSendMail(const std::string& url, const std::string& from, const std::string& to, const std::string& subject, const std::string& message, std::function<void(AsyncCurl::Result)>);
+	void smtpSendMail(const std::string& url, const std::string& to, const std::string& subject, const std::string& message, std::function<void(AsyncCurl::Result)>);
 
-	void httpGet(std::string url, std::unordered_map<std::string_view, std::string_view> params, std::function<void(AsyncHttp::Result)>);
-	void httpGet(std::string url, std::function<void(AsyncHttp::Result)>);
+	void httpGet(std::string url, std::unordered_map<std::string_view, std::string_view> params, std::function<void(AsyncCurl::Result)>);
+	void httpGet(std::string url, std::function<void(AsyncCurl::Result)>);
 	/* No cancelRequest(), see: https://github.com/curl/curl/issues/2101 */
 
 private:
@@ -46,7 +46,7 @@ private:
 	static void timerCallback(uS::Timer *);
 };
 
-class AsyncHttp::Result {
+class AsyncCurl::Result {
 public:
 	const bool successful;
 	const long responseCode;
