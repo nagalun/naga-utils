@@ -54,8 +54,9 @@ public:
 
 	CURL * getHandle();
 
-private:
+protected:
 	virtual bool finished(CURLcode result) = 0; /* Returns false if error occurred */
+	void addToMultiHandle();
 
 	friend AsyncCurl;
 };
@@ -140,8 +141,6 @@ CurlHandle::CurlHandle(CURLM * mHdl, std::function<void(AsyncCurl::Result)> cb)
 	ec(curl_easy_setopt(easyHandle, CURLOPT_TCP_NODELAY, 0));
 	ec(curl_easy_setopt(easyHandle, CURLOPT_PIPEWAIT, 1));
 	//ec(curl_easy_setopt(easyHandle, CURLOPT_VERBOSE, 1));
-
-	mc(curl_multi_add_handle(multiHandle, easyHandle));
 }
 
 CurlHandle::~CurlHandle() {
@@ -151,6 +150,10 @@ CurlHandle::~CurlHandle() {
 
 CURL * CurlHandle::getHandle() {
 	return easyHandle;
+}
+
+void CurlHandle::addToMultiHandle() {
+	mc(curl_multi_add_handle(multiHandle, easyHandle));
 }
 
 
@@ -172,6 +175,8 @@ CurlHttpHandle::CurlHttpHandle(CURLM * mHdl, std::string url, std::unordered_map
 	ec(curl_easy_setopt(getHandle(), CURLOPT_WRITEFUNCTION, &CurlHttpHandle::writer));
 	ec(curl_easy_setopt(getHandle(), CURLOPT_WRITEDATA, &writeBuffer));
 	ec(curl_easy_setopt(getHandle(), CURLOPT_URL, url.c_str()));
+
+	addToMultiHandle();
 }
 
 bool CurlHttpHandle::finished(CURLcode result) {
@@ -227,6 +232,8 @@ CurlSmtpHandle::CurlSmtpHandle(CURLM * mHdl, const std::string& url, const std::
 
 	std::cout << "sending to " << url << ":" << from << ":" << to << ":" << subject << std::endl;
 	std::cout << readBuffer << std::endl;
+
+	addToMultiHandle();
 }
 
 bool CurlSmtpHandle::finished(CURLcode result) {
@@ -343,6 +350,7 @@ void AsyncCurl::smtpSendMail(const std::string& url, const std::string& from, co
 		const std::string& subject, const std::string& message, std::function<void(AsyncCurl::Result)> onFinished) {
 	pendingRequests.emplace(new CurlSmtpHandle(multiHandle, url,
 		from, to, subject, message, std::move(onFinished)));
+	//update();
 }
 
 void AsyncCurl::smtpSendMail(const std::string& url, const std::string& to, const std::string& subject,
@@ -351,9 +359,17 @@ void AsyncCurl::smtpSendMail(const std::string& url, const std::string& to, cons
 	smtpSendMail(url, self, to, subject, message, std::move(onFinished));
 }
 
+void AsyncCurl::smtpRelay(const std::string& to, const std::string& subject, const std::string& message,
+		std::function<void(AsyncCurl::Result)> onFinished) {
+	static const std::string localUrl = "smtp://localhost/" + std::string(getHostname());
+	smtpSendMail(localUrl, to, subject, message, std::move(onFinished));
+}
+
+
 void AsyncCurl::httpGet(std::string url, std::unordered_map<std::string_view, std::string_view> params,
 		std::function<void(AsyncCurl::Result)> onFinished) {
 	pendingRequests.emplace(new CurlHttpHandle(multiHandle, std::move(url), std::move(params), std::move(onFinished)));
+	//update();
 }
 
 void AsyncCurl::httpGet(std::string url, std::function<void(AsyncCurl::Result)> onFinished) {
