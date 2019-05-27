@@ -212,21 +212,19 @@ CurlSmtpHandle::CurlSmtpHandle(CURLM * mHdl, const std::string& url, const std::
 
 	ec(curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L));
 
-	readBuffer.reserve(from.size() + to.size() + subject.size() + message.size() + 24 + 6);
+	readBuffer.reserve(from.size() + to.size() + subject.size() + message.size() + 7 + 3 + 5 + 3 + 9 + 4 + 1);
 
-	readBuffer += "From: ";
+	readBuffer += "From: <"; // 7
 	readBuffer += from;
-	readBuffer += '\n';
+	readBuffer += ">\r\n"; // 3
 
-	readBuffer += "To: ";
+	readBuffer += "To: <"; // 5
 	readBuffer += to;
-	readBuffer += '\n';
+	readBuffer += ">\r\n"; // 3
 
-	readBuffer += "Subject: ";
+	readBuffer += "Subject: "; // 9
 	readBuffer += subject;
-	readBuffer += '\n';
-
-	readBuffer += '\n';
+	readBuffer += "\r\n\r\n"; // 4
 
 	readBuffer += message;
 
