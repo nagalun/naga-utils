@@ -4,6 +4,7 @@
 	#include <sys/types.h>
 	#include <sys/stat.h>
 	#include <unistd.h>
+	#include <limits.h>
 #else
 	#include <windows.h>
 #endif
@@ -55,15 +56,13 @@ std::string_view getUsername() {
 }
 
 std::string_view getHostname() {
-	// the variable is called HOSTNAME on Linux, and COMPUTERNAME on Windows
-	return getenv(
+	// some linux distros don't export HOSTNAME correctly, so gethostname is needed
 #ifdef __WIN32
-		"COMPUTER"
+	return getenv("COMPUTERNAME");
 #else
-		"HOST"
+	static char hostname[HOST_NAME_MAX];
+	return gethostname(&hostname[0], HOST_NAME_MAX) == 0 ? hostname : "";
 #endif
-		"NAME"
-	);
 }
 
 bool processExists(int pid) {
