@@ -255,7 +255,8 @@ sz_t CurlSmtpHandle::reader(char * buf, std::size_t size, std::size_t nmemb, Cur
 }
 
 AsyncCurl::AsyncCurl(uS::Loop * loop)
-: loop(loop),
+: localSmtpUrl("smtp://localhost/" + std::string(getHostname())),
+  loop(loop),
   timer(new uS::Timer(loop)),
   multiHandle(curl_multi_init()),
   handleCount(0),
@@ -359,8 +360,11 @@ void AsyncCurl::smtpSendMail(const std::string& url, const std::string& to, cons
 
 void AsyncCurl::smtpRelay(const std::string& to, const std::string& subject, const std::string& message,
 		std::function<void(AsyncCurl::Result)> onFinished) {
-	static const std::string localUrl = "smtp://localhost/" + std::string(getHostname());
-	smtpSendMail(localUrl, to, subject, message, std::move(onFinished));
+	smtpSendMail(localSmtpUrl, to, subject, message, std::move(onFinished));
+}
+
+void AsyncCurl::smtpSetRelayUrl(std::string newUrl) {
+	localSmtpUrl = std::move(newUrl);
 }
 
 
