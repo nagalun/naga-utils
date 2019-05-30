@@ -1,6 +1,7 @@
 #include <type_traits>
 #include <stdexcept>
 #include <optional>
+#include <cstring>
 
 #include <byteswap.hpp>
 #include <stringparser.hpp>
