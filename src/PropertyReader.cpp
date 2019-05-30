@@ -5,7 +5,51 @@
 #include <cstdint>
 #include <fstream>
 
-PropertyReader::PropertyReader(const std::string path)
+// TODO: don't allow spaces in key names, or escape them
+
+std::string parseSpecial(std::string str) {
+	std::size_t i = 0;
+	while ((i = str.find('\\', i)) != std::string::npos) {
+		i++;
+
+		if (i == str.size()) {
+			str.erase(i - 1);
+			break;
+		}
+
+		switch (str[i]) {
+			case 'n':
+				str[i - 1] = '\n';
+				break;
+
+			default:
+				str[i - 1] = str[i];
+				break;
+		}
+
+		str.erase(i, 1);
+	}
+
+	return std::move(str);
+}
+
+std::string serializeSpecial(std::string str) {
+	std::size_t i = 0;
+	while ((i = str.find_first_of("\n\\", i)) != std::string::npos) {
+		switch (str[i]) {
+			case '\n':
+				str[i] = 'n';
+			case '\\':
+				str.insert(str.begin() + i, '\\');
+				i += 2;
+				break;
+		}
+	}
+
+	return std::move(str);
+}
+
+PropertyReader::PropertyReader(std::string_view path)
 : filePath(path),
   propsChanged(false) {
 	readFromDisk();
@@ -33,11 +77,13 @@ bool PropertyReader::readFromDisk() {
 		if (prop.size() > 0) {
 			std::size_t keylen = prop.find_first_of(' ');
 			if (keylen != std::string::npos) {
-				props[prop.substr(0, keylen)] = prop.substr(keylen + 1);
+				props.insert_or_assign(parseSpecial(prop.substr(0, keylen)), parseSpecial(prop.substr(keylen + 1)));
 			}
 		}
+
 		prop.clear();
 	}
+
 	return ok;
 }
 
@@ -50,7 +96,7 @@ bool PropertyReader::writeToDisk(bool force) {
 		std::ofstream file(filePath, std::ios_base::trunc);
 		// just throw if it couldn't open the file
 		for (auto & kv : props) {
-			file << kv.first << " " << kv.second << "\n";
+			file << serializeSpecial(kv.first) << ' ' << serializeSpecial(kv.second) << '\n';
 		}
 	} else if (int err = std::remove(filePath.c_str())) {
 		throw std::runtime_error("Couldn't delete empty file (" + filePath + "): " + std::strerror(err));
@@ -63,35 +109,44 @@ bool PropertyReader::isEmpty() const {
 	return props.empty();
 }
 
-bool PropertyReader::hasProp(std::string key) const {
+bool PropertyReader::hasProp(std::string_view key) const {
 	return props.find(key) != props.end();
 }
 
-std::string PropertyReader::getProp(std::string key, std::string defval) const {
+std::string_view PropertyReader::getProp(std::string_view key, std::string_view defval) const {
 	auto search = props.find(key);
 	if (search != props.end()) {
 		return search->second;
 	}
+
 	return defval;
 }
 
-std::string PropertyReader::getOrSetProp(std::string key, std::string defval) {
-	if (!hasProp(key)) {
-		setProp(key, defval);
+std::string_view PropertyReader::getOrSetProp(std::string_view key, std::string_view defval) {
+	auto search = props.find(key);
+	if (search == props.end()) {
+		setProp(key, std::string(defval));
 		return defval;
 	}
-	return getProp(key);
+
+	return search->second;
 }
 
-void PropertyReader::setProp(std::string key, std::string value) {
+void PropertyReader::setProp(std::string_view key, std::string value) {
 	if (!value.size()) {
-		props.erase(key);
+		propsChanged |= delProp(key);
 	} else {
-		props[key] = value;
+		props.insert_or_assign(std::string(key), std::move(value));
+		propsChanged = true;
 	}
-	propsChanged = true;
 }
 
-bool PropertyReader::delProp(std::string key) {
-	return props.erase(key);
+bool PropertyReader::delProp(std::string_view key) {
+	auto search = props.find(key);
+	if (search != props.end()) {
+		props.erase(search);
+		return true;
+	}
+	
+	return false;
 }
