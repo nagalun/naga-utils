@@ -228,9 +228,6 @@ CurlSmtpHandle::CurlSmtpHandle(CURLM * mHdl, const std::string& url, const std::
 
 	readBuffer += message;
 
-	std::cout << "sending to " << url << ":" << from << ":" << to << ":" << subject << std::endl;
-	std::cout << readBuffer << std::endl;
-
 	addToMultiHandle();
 }
 
