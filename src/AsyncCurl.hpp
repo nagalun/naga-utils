@@ -41,6 +41,8 @@ public:
 	void httpGet(std::string url, std::function<void(AsyncCurl::Result)>);
 	/* No cancelRequest(), see: https://github.com/curl/curl/issues/2101 */
 
+	static std::string urlEscape(std::string_view);
+
 private:
 	void update();
 	void processCompleted();

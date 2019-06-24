@@ -45,17 +45,14 @@ class CurlHandle {
 	CURLM * multiHandle;
 	CURL * easyHandle;
 
-protected:
-	std::function<void(AsyncCurl::Result)> onFinished;
-
 public:
-	CurlHandle(CURLM *, std::function<void(AsyncCurl::Result)>);
+	CurlHandle(CURLM *);
 	virtual ~CurlHandle();
 
 	CURL * getHandle();
 
 protected:
-	virtual bool finished(CURLcode result) = 0; /* Returns false if error occurred */
+	virtual bool finished(CURLcode result); /* Returns false if error occurred */
 	void addToMultiHandle();
 
 	friend AsyncCurl;
@@ -63,6 +60,7 @@ protected:
 
 class CurlHttpHandle : public CurlHandle {
 	std::string writeBuffer;
+	std::function<void(AsyncCurl::Result)> onFinished;
 
 public:
 	CurlHttpHandle(CURLM *, std::string, std::unordered_map<std::string_view, std::string_view>,
@@ -70,13 +68,14 @@ public:
 
 private:
 	bool finished(CURLcode result);
-	static sz_t writer(char *, std::size_t, std::size_t, std::string *);
+	static sz_t writer(char *, sz_t, sz_t, std::string *);
 };
 
 class CurlSmtpHandle : public CurlHandle {
 	std::string readBuffer;
 	std::unique_ptr<curl_slist, void(*)(curl_slist *)> mailRcpts;
 	sz_t amountSent;
+	std::function<void(AsyncCurl::Result)> onFinished;
 
 public:
 	CurlSmtpHandle(CURLM *, const std::string& url, const std::string& from, const std::string& to,
@@ -84,7 +83,7 @@ public:
 
 private:
 	bool finished(CURLcode result);
-	static sz_t reader(char *, std::size_t, std::size_t, CurlSmtpHandle *);
+	static sz_t reader(char *, sz_t, sz_t, CurlSmtpHandle *);
 };
 
 class CurlSocket : public uS::Poll {
@@ -124,10 +123,9 @@ AsyncCurl::Result::Result(long httpResp, std::string data, const char * err)
   data(std::move(data)),
   errorString(err) { }
 
-CurlHandle::CurlHandle(CURLM * mHdl, std::function<void(AsyncCurl::Result)> cb)
+CurlHandle::CurlHandle(CURLM * mHdl)
 : multiHandle(mHdl),
-  easyHandle(curl_easy_init()),
-  onFinished(std::move(cb)) {
+  easyHandle(curl_easy_init()) {
 	if (!easyHandle) {
 		throw std::bad_alloc();
 	}
@@ -144,7 +142,9 @@ CurlHandle::CurlHandle(CURLM * mHdl, std::function<void(AsyncCurl::Result)> cb)
 }
 
 CurlHandle::~CurlHandle() {
-	mc(curl_multi_remove_handle(multiHandle, easyHandle));
+	if (multiHandle) {
+		mc(curl_multi_remove_handle(multiHandle, easyHandle));
+	}
 	curl_easy_cleanup(easyHandle);
 }
 
@@ -152,24 +152,23 @@ CURL * CurlHandle::getHandle() {
 	return easyHandle;
 }
 
+bool CurlHandle::finished(CURLcode result) { return true; }
+
 void CurlHandle::addToMultiHandle() {
 	mc(curl_multi_add_handle(multiHandle, easyHandle));
 }
 
 
 CurlHttpHandle::CurlHttpHandle(CURLM * mHdl, std::string url, std::unordered_map<std::string_view, std::string_view> params, std::function<void(AsyncCurl::Result)> cb)
-: CurlHandle(mHdl, std::move(cb)) {
+: CurlHandle(mHdl),
+  onFinished(std::move(cb)) {
 	bool first = true;
 	for (const auto& param : params) {
 		url += first ? '?' : '&';
 		first = false;
 		url += param.first; // should this be escaped as well?
 		url += '=';
-		// lots of allocs can happen here, bad!
-		char * escaped = curl_easy_escape(getHandle(), param.second.data(), param.second.size());
-		if (!escaped) { throw std::bad_alloc(); }
-		url += escaped;
-		curl_free(escaped);
+		url += AsyncCurl::urlEscape(param.second);
 	}
 
 	ec(curl_easy_setopt(getHandle(), CURLOPT_WRITEFUNCTION, &CurlHttpHandle::writer));
@@ -199,9 +198,10 @@ sz_t CurlHttpHandle::writer(char * data, std::size_t size, std::size_t nmemb, st
 
 CurlSmtpHandle::CurlSmtpHandle(CURLM * mHdl, const std::string& url, const std::string& from, const std::string& to,
 		const std::string& subject, const std::string& message, std::function<void(AsyncCurl::Result)> cb)
-: CurlHandle(mHdl, std::move(cb)),
+: CurlHandle(mHdl),
   mailRcpts(curl_slist_append(nullptr, to.c_str()), curl_slist_free_all),
-  amountSent(0) {
+  amountSent(0),
+  onFinished(std::move(cb)) {
 	CURL * curl = getHandle();
 	ec(curl_easy_setopt(curl, CURLOPT_URL, url.c_str()));
 	ec(curl_easy_setopt(curl, CURLOPT_MAIL_FROM, from.c_str()));
@@ -374,6 +374,21 @@ void AsyncCurl::httpGet(std::string url, std::unordered_map<std::string_view, st
 void AsyncCurl::httpGet(std::string url, std::function<void(AsyncCurl::Result)> onFinished) {
 	httpGet(std::move(url), {}, std::move(onFinished));
 }
+
+// lots of allocs can happen here, bad!
+std::string AsyncCurl::urlEscape(std::string_view str) {
+	static CurlHandle escHandle(nullptr);
+	std::string result;
+	if (char * escaped = curl_easy_escape(escHandle.getHandle(), str.data(), str.size())) {
+		result = escaped;
+		curl_free(escaped);
+	} else {
+		throw std::bad_alloc();
+	}
+
+	return result;
+}
+
 
 void AsyncCurl::update() {
 	mc(curl_multi_socket_action(multiHandle, CURL_SOCKET_TIMEOUT, 0, &handleCount));
