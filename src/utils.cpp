@@ -180,6 +180,17 @@ void trim(std::string& s) {
     rtrim(s);
 }
 
+void sanitize(std::string& s, bool keepNewlines) {
+	s.erase(std::remove_if(s.begin(), s.end(), [keepNewlines] (unsigned char c) -> bool {
+		if (c == '\n') {
+			return !keepNewlines;
+		}
+		
+		return std::iscntrl(c);
+	}), s.end());
+}
+
+
 // could go in a different file
 std::map<std::type_index, std::string> typeCache;
 std::map<std::string, std::type_index> typeMap;
@@ -241,6 +252,12 @@ void urldecode(std::vector<std::string>& v) {
 }
 
 std::string mkurldecoded(std::string s) {
+	urldecode(s);
+	return s;
+}
+
+std::string mkurldecoded_v(std::string_view sv) {
+	std::string s(sv);
 	urldecode(s);
 	return s;
 }

@@ -12,11 +12,11 @@ RecaptchaRestApi::RecaptchaRestApi(AsyncCurl& ac, std::vector<std::string> allow
   apiKey(apiKey),
   allowedHostnames(std::move(allowedHostnames)) { }
 
-void RecaptchaRestApi::check(Ip ip, std::string_view token, std::function<void(std::optional<bool>, nlohmann::json)> cb) {
+void RecaptchaRestApi::check(Ip ip, std::string token, std::function<void(std::optional<bool>, nlohmann::json)> cb) {
 	ac.httpGet("https://www.google.com/recaptcha/api/siteverify", {
 		{"secret", apiKey},
 		{"remoteip", ip.toString().data()}, // XXX: fix when json lib supports string views
-		{"response", std::string(token)}
+		{"response", std::move(token)}
 	}, [this, end{std::move(cb)}] (auto res) {
 		if (!res.successful) {
 			/* HTTP ERROR code check */
@@ -50,5 +50,18 @@ void RecaptchaRestApi::check(Ip ip, std::string_view token, std::function<void(s
 		}
 
 		end(verified, std::move(response));
+	});
+}
+
+// for v3 api keys
+void RecaptchaRestApi::checkv3(std::string_view action, Ip ip, std::string token, std::function<void(std::optional<double>, nlohmann::json)> cb) {
+	check(ip, std::move(token), [action{std::string(action)}, cb{std::move(cb)}] (auto ok, nlohmann::json res) {
+		if (ok && *ok && res["action"].is_string() && res["score"].is_number()
+				&& res["action"].get<std::string>() == action) {
+			cb(res["score"].get<double>(), std::move(res));
+			return;
+		}
+
+		cb(std::nullopt, std::move(res));
 	});
 }

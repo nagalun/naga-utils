@@ -28,12 +28,15 @@ void rtrim(std::string&);
 void ltrim(std::string&);
 void trim(std::string&);
 
+void sanitize(std::string&, bool keepNewlines = false);
+
 const std::string& demangle(std::type_index);
 std::type_index strToType(const std::string& s);
 
 void urldecode(std::string&);
 void urldecode(std::vector<std::string>&);
 std::string mkurldecoded(std::string);
+std::string mkurldecoded_v(std::string_view);
 
 // interestingly enough this doesn't cause linker errors
 constexpr u8 popc(u32 n) {
