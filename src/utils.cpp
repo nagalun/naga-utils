@@ -85,7 +85,7 @@ bool processExists(int pid) {
 }
 
 
-sz_t getUtf8StrLen(const std::string& str) {
+sz_t getUtf8StrLen(std::string_view str) {
 	sz_t j = 0, i = 0, x = 1;
 	while (i < str.size()) {
 		if (x > 4) { /* Invalid unicode */

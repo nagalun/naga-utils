@@ -7,7 +7,7 @@
 
 #include <explints.hpp>
 
-sz_t getUtf8StrLen(const std::string&);
+sz_t getUtf8StrLen(std::string_view);
 
 bool makeDir(const std::string&);
 bool fileExists(const std::string&);
