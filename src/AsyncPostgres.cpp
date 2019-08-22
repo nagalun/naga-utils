@@ -426,6 +426,10 @@ AsyncPostgres::Result::Result(PGresult * r, PGconn * c)
   conn(c) { }
 
 sz_t AsyncPostgres::Result::numAffected() const {
+	if (!pgResult) {
+		return 0;
+	}
+	
 	std::string_view affected(PQcmdTuples(pgResult.get()));
 
 	return affected.size() ? fromString<sz_t>(affected) : 0;

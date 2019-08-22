@@ -1,5 +1,3 @@
-CXX = g++-8
-
 SRC_FILES = $(wildcard src/*.cpp)
 OBJ_FILES = $(SRC_FILES:src/%.cpp=build/%.o)
 DEP_FILES = $(OBJ_FILES:.o=.d)
