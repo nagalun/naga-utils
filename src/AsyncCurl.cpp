@@ -79,7 +79,7 @@ class CurlSmtpHandle : public CurlHandle {
 
 public:
 	CurlSmtpHandle(CURLM *, const std::string& url, const std::string& from, const std::string& to,
-		const std::string& subject, const std::string& message, std::function<void(AsyncCurl::Result)>);
+		const std::string& subject, const std::string& message, const std::string& smtpSenderName, std::function<void(AsyncCurl::Result)>);
 
 private:
 	bool finished(CURLcode result);
@@ -197,7 +197,7 @@ sz_t CurlHttpHandle::writer(char * data, std::size_t size, std::size_t nmemb, st
 }
 
 CurlSmtpHandle::CurlSmtpHandle(CURLM * mHdl, const std::string& url, const std::string& from, const std::string& to,
-		const std::string& subject, const std::string& message, std::function<void(AsyncCurl::Result)> cb)
+		const std::string& subject, const std::string& message, const std::string& smtpSenderName, std::function<void(AsyncCurl::Result)> cb)
 : CurlHandle(mHdl),
   mailRcpts(curl_slist_append(nullptr, to.c_str()), curl_slist_free_all),
   amountSent(0),
@@ -221,7 +221,7 @@ CurlSmtpHandle::CurlSmtpHandle(CURLM * mHdl, const std::string& url, const std::
 	} else {
 		readBuffer += "From: <"; // 7
 	}
-	
+
 	readBuffer += from;
 	readBuffer += ">\r\n"; // 3
 
@@ -352,7 +352,7 @@ int AsyncCurl::queuedRequests() const {
 void AsyncCurl::smtpSendMail(const std::string& url, const std::string& from, const std::string& to,
 		const std::string& subject, const std::string& message, std::function<void(AsyncCurl::Result)> onFinished) {
 	pendingRequests.emplace(new CurlSmtpHandle(multiHandle, url,
-		from, to, subject, message, std::move(onFinished)));
+		from, to, subject, message, smtpSenderName, std::move(onFinished)));
 	//update();
 }
 
