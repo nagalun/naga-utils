@@ -26,12 +26,16 @@ void RecaptchaRestApi::check(Ip ip, std::string token, std::function<void(std::o
 		}
 
 		bool verified = false;
-		//std::string failReason;
 		nlohmann::json response;
+		
 		try {
 			response = nlohmann::json::parse(res.data);
 			bool success = response["success"].get<bool>();
-			std::string host(response["hostname"].get<std::string>());
+			std::string host;
+			if (success) {
+				host = response["hostname"].get<std::string>();
+			}
+
 			verified = success && std::find(allowedHostnames.begin(), allowedHostnames.end(), host) != allowedHostnames.end();
 			/*if (!success) {
 				failReason = "API rejected token";
@@ -41,7 +45,7 @@ void RecaptchaRestApi::check(Ip ip, std::string token, std::function<void(std::o
 			} else if (success && !verified) {
 				failReason = "Wrong hostname: '" + host + "'";
 			}*/
-		} catch (const nlohmann::json::parse_error& e) {
+		} catch (const nlohmann::json::exception& e) {
 			std::cerr << "Exception when parsing json from google! (" << res.data << ")" << std::endl;
 			std::cerr << "what(): " << e.what() << std::endl;
 
