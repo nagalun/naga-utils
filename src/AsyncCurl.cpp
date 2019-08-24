@@ -212,9 +212,16 @@ CurlSmtpHandle::CurlSmtpHandle(CURLM * mHdl, const std::string& url, const std::
 
 	ec(curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L));
 
-	readBuffer.reserve(from.size() + to.size() + subject.size() + message.size() + 7 + 3 + 5 + 3 + 9 + 4 + 1);
+	readBuffer.reserve(from.size() + to.size() + subject.size() + message.size() + smtpSenderName.size() + 7 + 3 + 5 + 3 + 9 + 4 + 2);
 
-	readBuffer += "From: <"; // 7
+	if (smtpSenderName.size() > 0) {
+		readBuffer += "From: ";
+		readBuffer += smtpSenderName;
+		readBuffer += " <"; // 7
+	} else {
+		readBuffer += "From: <"; // 7
+	}
+	
 	readBuffer += from;
 	readBuffer += ">\r\n"; // 3
 
@@ -363,6 +370,11 @@ void AsyncCurl::smtpRelay(const std::string& to, const std::string& subject, con
 void AsyncCurl::smtpSetRelayUrl(std::string newUrl) {
 	localSmtpUrl = std::move(newUrl);
 }
+
+void AsyncCurl::smtpSetSenderName(std::string newName) {
+	smtpSenderName = std::move(newName);
+}
+
 
 
 void AsyncCurl::httpGet(std::string url, std::unordered_map<std::string_view, std::string_view> params,
