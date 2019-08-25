@@ -230,7 +230,7 @@ void urldecode(std::string& s) {
 				s[pos] = ' ';
 				break;
 
-			case '%':
+			case '%': {
 				// must always have at least two chars after the %
 				if (s.size() - (pos + 1) < 2) {
 					throw std::length_error("Wrong URL percent encoding");
@@ -244,9 +244,9 @@ void urldecode(std::string& s) {
 
 				// erase the two hex chars
 				s.erase(pos + 1, 2);
-				break;
+			} break;
 		}
-		
+
 		pos++;
 	}
 }
