@@ -185,7 +185,7 @@ void sanitize(std::string& s, bool keepNewlines) {
 		if (c == '\n') {
 			return !keepNewlines;
 		}
-		
+
 		return std::iscntrl(c);
 	}), s.end());
 }
@@ -223,25 +223,31 @@ std::type_index strToType(const std::string& s) {
 
 void urldecode(std::string& s) {
 	sz_t pos = 0;
-	while ((pos = s.find('%', pos)) != std::string::npos) {
-		const char * p = s.c_str() + pos; // "%??..."
-		if (s.size() - pos < 2) {
-			throw std::length_error("Wrong URL percent encoding");
+	while ((pos = s.find_first_of("%+", pos, 2)) != std::string::npos) {
+		const char * p = s.c_str() + pos; // "%??..." or "+..."
+		switch (p[0]) {
+			case '+':
+				s[pos] = ' ';
+				break;
+
+			case '%':
+				// must always have at least two chars after the %
+				if (s.size() - (pos + 1) < 2) {
+					throw std::length_error("Wrong URL percent encoding");
+				}
+
+				// from first hex char to last + 1, replace % with the decoded value
+				auto res = std::from_chars(p + 1, p + 3, *reinterpret_cast<u8 *>(&s[pos]), 16);
+				if (res.ptr != p + 3) {
+					throw std::logic_error("Invalid URL percent encoding");
+				}
+
+				// erase the two hex chars
+				s.erase(pos + 1, 2);
+				break;
 		}
-
-		//char tmp = p[3]; // str[str.size()] is guaranteed to be '\0'
-		//s[pos + 3] = '\0';
-		auto res = std::from_chars(p + 1, p + 3, *reinterpret_cast<u8 *>(&s[pos]), 16);
-		//unsigned long ch = std::strtoul(p + 1, nullptr, 16);
-		if (res.ptr != p + 3) {
-			throw std::logic_error("Invalid URL percent encoding");
-		}
-
-		//s[pos] = static_cast<char>(ch & 0xFF);
-
-		//s[pos + 3] = tmp; // if the string ends here we would always be writing '\0'
-
-		s.erase(pos + 1, 2);
+		
+		pos++;
 	}
 }
 
