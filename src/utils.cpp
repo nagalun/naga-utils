@@ -133,8 +133,13 @@ std::vector<std::string_view> tokenize(std::string_view str,
 	return tokens;
 }
 
-bool strStartsWith(std::string_view str, std::string_view prefix) {
-	return prefix.size() <= str.size() && str.substr(0, prefix.size()) == prefix;
+bool strStartsWith(std::string_view str, std::string_view prefix, bool caseSensitive) {
+	return prefix.size() <= str.size() && caseSensitive
+		? str.substr(0, prefix.size()) == prefix
+		: std::mismatch(str.begin(), str.end(), prefix.begin(), prefix.end(),
+			[] (unsigned char a, unsigned char b) -> bool {
+				return std::tolower(a) == std::tolower(b);
+			}).second == prefix.end();
 }
 
 static SeededMt19937 rng;
@@ -162,14 +167,14 @@ std::string randomStr(sz_t size) { // WARNING: RNG not thread safe
 
 // trim from start (in place)
 void ltrim(std::string& s) {
-    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [] (char ch) {
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [] (unsigned char ch) {
         return !std::isspace(ch);
     }));
 }
 
 // trim from end (in place)
 void rtrim(std::string& s) {
-    s.erase(std::find_if(s.rbegin(), s.rend(), [] (char ch) {
+    s.erase(std::find_if(s.rbegin(), s.rend(), [] (unsigned char ch) {
         return !std::isspace(ch);
     }).base(), s.end());
 }
@@ -178,6 +183,26 @@ void rtrim(std::string& s) {
 void trim(std::string& s) {
     ltrim(s);
     rtrim(s);
+}
+
+// trim from start (in place)
+void ltrim_v(std::string_view& s) {
+    s.remove_prefix(std::find_if(s.begin(), s.end(), [] (unsigned char ch) {
+        return !std::isspace(ch);
+    }) - s.begin());
+}
+
+// trim from end (in place)
+void rtrim_v(std::string_view& s) {
+    s.remove_suffix(std::find_if(s.rbegin(), s.rend(), [] (unsigned char ch) {
+        return !std::isspace(ch);
+    }) - s.rbegin());
+}
+
+// trim from both ends (in place)
+void trim_v(std::string_view& s) {
+    ltrim_v(s);
+    rtrim_v(s);
 }
 
 void sanitize(std::string& s, bool keepNewlines) {

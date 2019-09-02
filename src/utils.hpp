@@ -19,7 +19,7 @@ bool processExists(int pid);
 i64 jsDateNow();
 std::vector<std::string_view> tokenize(std::string_view, char delimiter = ' ', bool trimEmpty = false);
 
-bool strStartsWith(std::string_view str, std::string_view prefix);
+bool strStartsWith(std::string_view str, std::string_view prefix, bool caseSensitive = true);
 
 u32 randUint32();
 std::string randomStr(sz_t size);
@@ -27,6 +27,10 @@ std::string randomStr(sz_t size);
 void rtrim(std::string&);
 void ltrim(std::string&);
 void trim(std::string&);
+
+void rtrim_v(std::string_view&);
+void ltrim_v(std::string_view&);
+void trim_v(std::string_view&);
 
 void sanitize(std::string&, bool keepNewlines = false);
 
