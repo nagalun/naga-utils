@@ -12,6 +12,7 @@
 #include <explints.hpp>
 #include <fwd_uWS.h>
 #include <shared_ptr_ll.hpp>
+#include <HttpData.hpp>
 #include <tuple.hpp>
 
 #include <nlohmann/json_fwd.hpp>
@@ -57,25 +58,6 @@ public:
 
 private:
 	void exec(ll::shared_ptr<Request>, std::string_view, std::vector<std::string>);
-};
-
-class HttpData {
-	uWS::HttpRequest * req;
-
-public:
-	HttpData(uWS::HttpRequest *);
-
-	uWS::HttpRequest * getData();
-
-	std::string_view getUrl();
-	std::optional<std::string_view> getQueryParam(std::string_view);
-	std::optional<std::string> getDecodedQueryParam(std::string_view);
-	std::optional<std::string_view> getHeader(std::string_view);
-
-	std::optional<std::string_view> getCookie(std::string_view);
-	
-private:
-	friend Request;
 };
 
 class Request : public HttpData {
