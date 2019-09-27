@@ -128,21 +128,25 @@ static void encodePng(size_t pngWidth, size_t pngHeight, u8 chans, const u8* dat
 		throw std::runtime_error("encodePng: png_create_info_struct failed");
 	}
 
+	sz_t actualChunkCount = 0;
 	std::unique_ptr<u8[]> toDelete[chunkWriters.size()];
 	png_unknown_chunk_t chunkArr[chunkWriters.size()];
-	{
-		sz_t i = 0;
-		for (auto& chunk : chunkWriters) {
-			png_unknown_chunkp unk = &chunkArr[i];
-			std::copy_n(chunk.first.data(), 4, unk->name);
-			auto ret(chunk.second());
-			unk->data = ret.first.get();
-			unk->size = ret.second;
-			unk->location = PNG_HAVE_PLTE;
-			// make the buffer live till the end of this function
-			toDelete[i] = std::move(ret.first);
-			i++;
+
+	for (auto& chunk : chunkWriters) {
+		png_unknown_chunkp unk = &chunkArr[actualChunkCount];
+		auto ret(chunk.second());
+		if (!ret.first) {
+			// skip, if the writer returned a null buffer
+			continue;
 		}
+
+		std::copy_n(chunk.first.data(), 4, unk->name);
+		unk->data = ret.first.get();
+		unk->size = ret.second;
+		unk->location = PNG_HAVE_PLTE;
+		// make the buffer live till the end of this function
+		toDelete[actualChunkCount] = std::move(ret.first);
+		actualChunkCount++;
 	}
 
 	png_set_IHDR(pngPtr, infoPtr, pngWidth, pngHeight, 8,
@@ -163,7 +167,9 @@ static void encodePng(size_t pngWidth, size_t pngHeight, u8 chans, const u8* dat
 
 	png_write_info_before_PLTE(pngPtr, infoPtr);
 
-	png_set_unknown_chunks(pngPtr, infoPtr, chunkArr, chunkWriters.size());
+	if (actualChunkCount > 0) {
+		png_set_unknown_chunks(pngPtr, infoPtr, chunkArr, actualChunkCount);
+	}
 
 	png_write_info(pngPtr, infoPtr);
 	png_write_image(pngPtr, rowPointers);
@@ -179,7 +185,8 @@ static img_t loadPngFromFile(const std::string& file, u8 chans,
 	ifstream ifs(file, ios::in | ios::binary | ios::ate);
 
 	if (!ifs) {
-		throw std::runtime_error("Couldn't open file: " + file);
+		return {nullptr, 0, 0};
+		//throw std::runtime_error("Couldn't open file: " + file);
 	}
 
 	ifstream::pos_type size = ifs.tellg();
@@ -278,11 +285,12 @@ void PngImage::allocate(u32 w, u32 h, RGB_u bg) {
 	fill(bg);
 }
 
-void PngImage::readFile(const std::string& file) {
+bool PngImage::readFile(const std::string& file) {
 	auto img(loadPngFromFile(file, getChannels(), chunkReaders));
 	data = std::move(img.data);
 	w = img.w;
 	h = img.h;
+	return bool(data);
 }
 
 void PngImage::readFileOnMem(u8 * filebuf, sz_t len) {
