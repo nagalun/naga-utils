@@ -10,6 +10,9 @@ namespace buf {
 	std::size_t writeLE(std::uint8_t * const buf, Number integer) noexcept {
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 		switch (sizeof(Number)) {
+		case 1:
+			break;
+
 		case 2:
 			integer = bswap_16(integer);
 			break;
@@ -31,6 +34,9 @@ namespace buf {
 	std::size_t writeBE(std::uint8_t * const buf, Number integer) noexcept {
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 		switch (sizeof(Number)) {
+		case 1:
+			break;
+
 		case 2:
 			integer = bswap_16(integer);
 			break;
@@ -50,11 +56,14 @@ namespace buf {
 
 
 	template <typename Number>
-	Number readLE(std::uint8_t * const buf) noexcept {
+	Number readLE(const std::uint8_t * const buf) noexcept {
 		Number finalBytes;
 		std::memcpy(&finalBytes, buf, sizeof(Number));
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 		switch (sizeof(Number)) {
+		case 1:
+			break;
+
 		case 2:
 			finalBytes = bswap_16(finalBytes);
 			break;
@@ -72,11 +81,14 @@ namespace buf {
 	}
 
 	template <typename Number>
-	Number readBE(std::uint8_t * const buf) noexcept {
+	Number readBE(const std::uint8_t * const buf) noexcept {
 		Number finalBytes;
 		std::memcpy(&finalBytes, buf, sizeof(Number));
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 		switch (sizeof(Number)) {
+		case 1:
+			break;
+
 		case 2:
 			finalBytes = bswap_16(finalBytes);
 			break;

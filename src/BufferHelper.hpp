@@ -14,10 +14,10 @@ namespace buf {
 
 	/* Reads any int from a buffer with little/big endian order (converts to host endianness) */
 	template <typename Number>
-	Number readLE(std::uint8_t *) noexcept;
+	Number readLE(const std::uint8_t *) noexcept;
 
 	template <typename Number>
-	Number readBE(std::uint8_t *) noexcept;
+	Number readBE(const std::uint8_t *) noexcept;
 };
 
 #include "BufferHelper.tpp"

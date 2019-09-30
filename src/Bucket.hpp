@@ -5,13 +5,26 @@
 #include <explints.hpp>
 
 class Bucket {
+public:
+	using Rate = u16;
+	using Per = u16;
+	using Allowance = float;
+
+private:
 	u16 rate;
 	u16 per;
-	float allowance;
-	std::chrono::steady_clock::time_point last_check;
+	Allowance allowance;
+	std::chrono::steady_clock::time_point lastCheck;
 
 public:
-	Bucket(const u16 rate, const u16 per);
-	void set(u16 rate, u16 per);
-	bool can_spend(const u16 = 1);
+	Bucket(Rate, Per);
+
+	void set(Rate, Per);
+
+	bool canSpend(Rate = 1) const;
+	bool spend(Rate = 1);
+
+	Rate getRate() const;
+	Per getPer() const;
+	Allowance getAllowance() const;
 };

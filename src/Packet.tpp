@@ -282,7 +282,7 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 		throw BUFFER_ERROR;
 	}
 
-	u8 * readAt = b;
+	const u8 * readAt = b;
 	b += sizeof(N);
 	return buf::readBE<N>(readAt);
 }
@@ -299,7 +299,7 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 		throw BUFFER_ERROR;
 	}
 
-	u8 * readAt = b;
+	const u8 * readAt = b;
 	sz_t decodedBytes;
 	u64 size = decodeUnsignedVarint(readAt, decodedBytes, remaining);
 
@@ -310,8 +310,8 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 	b += decodedBytes + size * sizeof(T);
 	readAt += decodedBytes;
 	return Container(
-		reinterpret_cast<T *>(readAt),
-		reinterpret_cast<T *>(b)
+		reinterpret_cast<const T *>(readAt),
+		reinterpret_cast<const T *>(b)
 	); // guaranteed copy ellsion in c++17
 }
 
@@ -340,7 +340,7 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 	Container c;
 	c.reserve(size); // XXX: could fill ram lol
 	while (size-- > 0) {
-		u8 * prev = b;
+		const u8 * prev = b;
 		c.emplace_back(readFromBuf<T>(b, remaining));
 		remaining -= b - prev;
 	}
@@ -351,7 +351,7 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 // idk if this is optimal
 template<class Tuple, std::size_t... Is>
 Tuple tupleFromBuf(const u8 *& b, sz_t remaining, std::index_sequence<Is...>) {
-	u8 * start = b;
+	const u8 * start = b;
 	return Tuple{readFromBuf<typename std::tuple_element<Is, Tuple>::type>(b, remaining - (b - start))...};
 }
 
@@ -366,7 +366,7 @@ template<class Array, std::size_t... Is>
 Array staticArrayFromBuf(const u8 *& b, std::index_sequence<Is...>) {
 	using T = typename Array::value_type;
 
-	u8 * start = b;
+	const u8 * start = b;
 	b += sizeof(T) * sizeof... (Is);
 
 	if /*constexpr*/ (sizeof(T) == 1) {
@@ -453,7 +453,7 @@ std::tuple<Args...> Packet<opCode, Args...>::fromBuffer(const u8 * buffer, sz_t 
 		throw std::length_error("Buffer too small/big");
 	}
 
-	return std::tuple<Args...>{readFromBuf<Args>(&buffer, size - (buffer - start))...};
+	return std::tuple<Args...>{readFromBuf<Args>(buffer, size - (buffer - start))...};
 }
 
 template<u8 opCode, typename... Args>

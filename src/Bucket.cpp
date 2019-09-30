@@ -1,12 +1,11 @@
 #include "Bucket.hpp"
 
+Bucket::Bucket(Bucket::Rate rate, Bucket::Per per)
+: rate(rate),
+  per(per),
+  allowance(rate) { }
 
-Bucket::Bucket(const u16 rate, const u16 per)
-	: rate(rate),
-	  per(per),
-	  allowance(rate) { }
-
-void Bucket::set(u16 nrate, u16 nper) {
+void Bucket::set(Bucket::Rate nrate, Bucket::Per nper) {
 	rate = nrate;
 	per = nper < 1 ? 1 : nper;
 	if (allowance > nrate) {
@@ -14,20 +13,44 @@ void Bucket::set(u16 nrate, u16 nper) {
 	}
 }
 
-bool Bucket::can_spend(const u16 count) {
+bool Bucket::canSpend(Rate count) const {
 	const auto now = std::chrono::steady_clock::now();
-	std::chrono::duration<float> passed = now - last_check;
-	last_check = now;
-	allowance += passed.count() * (static_cast<float>(rate) / per);
-	
+	std::chrono::duration<Allowance> passed = now - lastCheck;
+	Allowance ace = allowance + passed.count() * (static_cast<Allowance>(rate) / per);
+
+	if (ace > rate) {
+		ace = rate;
+	}
+
+	return count <= ace;
+}
+
+bool Bucket::spend(Rate count) {
+	const auto now = std::chrono::steady_clock::now();
+	std::chrono::duration<Allowance> passed = now - lastCheck;
+	lastCheck = now;
+	allowance += passed.count() * (static_cast<Allowance>(rate) / per);
+
 	if (allowance > rate) {
 		allowance = rate;
 	}
-	
+
 	if (allowance < count) {
 		return false;
 	}
-	
+
 	allowance -= count;
 	return true;
+}
+
+Bucket::Rate Bucket::getRate() const {
+	return rate;
+}
+
+Bucket::Per Bucket::getPer() const {
+	return per;
+}
+
+Bucket::Allowance Bucket::getAllowance() const {
+	return allowance;
 }
