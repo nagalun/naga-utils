@@ -10,6 +10,7 @@ class IdSys {
 public:
 	IdSys();
 
+	N peekNextId() const;
 	N getId();
 	void freeId(N);
 

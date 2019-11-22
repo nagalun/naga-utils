@@ -6,6 +6,11 @@ IdSys<N>::IdSys()
 : currentId(0) { }
 
 template<typename N>
+N IdSys<N>::peekNextId() const {
+	return freeIds.empty() ? currentId + 1 : *freeIds.begin();
+}
+
+template<typename N>
 N IdSys<N>::getId() {
 	N id;
 	if (!freeIds.empty()) {

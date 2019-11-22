@@ -5,12 +5,23 @@ Bucket::Bucket(Bucket::Rate rate, Bucket::Per per)
   per(per),
   allowance(rate) { }
 
+Bucket::Bucket(Bucket::Rate rate, Bucket::Per per, Bucket::Allowance allowance)
+: rate(rate),
+  per(per),
+  allowance(allowance) { }
+
 void Bucket::set(Bucket::Rate nrate, Bucket::Per nper) {
 	rate = nrate;
 	per = nper < 1 ? 1 : nper;
 	if (allowance > nrate) {
 		allowance = nrate;
 	}
+}
+
+void Bucket::set(Bucket::Rate nrate, Bucket::Per nper, Bucket::Allowance nallowance) {
+	rate = nrate;
+	per = nper < 1 ? 1 : nper;
+	allowance = nallowance;
 }
 
 bool Bucket::canSpend(Rate count) const {

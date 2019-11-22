@@ -18,8 +18,10 @@ private:
 
 public:
 	Bucket(Rate, Per);
+	Bucket(Rate, Per, Allowance);
 
 	void set(Rate, Per);
+	void set(Rate, Per, Allowance);
 
 	bool canSpend(Rate = 1) const;
 	bool spend(Rate = 1);

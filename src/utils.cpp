@@ -65,6 +65,15 @@ std::string_view getHostname() {
 #endif
 }
 
+std::string_view getDomainname() {
+#ifdef __WIN32
+	return getenv("UserDnsDomain");
+#else
+	static char domainname[HOST_NAME_MAX];
+	return getdomainname(&domainname[0], HOST_NAME_MAX) == 0 ? domainname : "";
+#endif
+}
+
 bool processExists(int pid) {
 #ifndef __WIN32
 	return fileExists("/proc/" + std::to_string(pid));
