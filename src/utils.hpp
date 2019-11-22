@@ -14,6 +14,7 @@ bool fileExists(const std::string&);
 
 std::string_view getUsername();
 std::string_view getHostname();
+std::string_view getDomainname();
 bool processExists(int pid);
 
 i64 jsDateNow();

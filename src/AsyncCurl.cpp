@@ -259,7 +259,7 @@ sz_t CurlSmtpHandle::reader(char * buf, std::size_t size, std::size_t nmemb, Cur
 }
 
 AsyncCurl::AsyncCurl(uS::Loop * loop)
-: localSmtpUrl("smtp://localhost/" + std::string(getHostname())),
+: localSmtpUrl("smtp://localhost/" + std::string(getDomainname())),
   loop(loop),
   timer(new uS::Timer(loop)),
   multiHandle(curl_multi_init()),
