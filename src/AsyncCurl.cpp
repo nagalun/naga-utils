@@ -358,7 +358,7 @@ void AsyncCurl::smtpSendMail(const std::string& url, const std::string& from, co
 
 void AsyncCurl::smtpSendMail(const std::string& url, const std::string& to, const std::string& subject,
 		const std::string& message, std::function<void(AsyncCurl::Result)> onFinished) {
-	static const std::string self = std::string(getUsername()) + "@" + std::string(getHostname());
+	static const std::string self = std::string(getUsername()) + "@" + std::string(getDomainname());
 	smtpSendMail(url, self, to, subject, message, std::move(onFinished));
 }
 
