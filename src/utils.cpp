@@ -69,8 +69,9 @@ std::string_view getDomainname() {
 #ifdef __WIN32
 	return getenv("UserDnsDomain");
 #else
-	static char domainname[HOST_NAME_MAX];
-	return getdomainname(&domainname[0], HOST_NAME_MAX) == 0 ? domainname : "";
+	std::string_view dns(getHostname());
+	dns.remove_prefix(std::min(dns.find('.') + 1, dns.size()));
+	return dns;
 #endif
 }
 
