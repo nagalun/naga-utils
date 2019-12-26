@@ -29,7 +29,7 @@ ProxycheckioRestApi::ProxycheckioRestApi(AsyncCurl& ac, TimedCallbacks& tc, std:
 
 void ProxycheckioRestApi::check(Ip ip, std::function<void(std::optional<bool>, nlohmann::json)> cb) {
 	std::optional<bool> result = cachedResult(ip);
-	if (result) {
+	if (result.has_value()) {
 		cb(*result, nullptr);
 		return;
 	}

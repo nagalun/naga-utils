@@ -98,7 +98,7 @@ const char * getDataPointer(const char(& arr)[N]) {
 template<typename T>
 typename std::enable_if<is_optional<T>::value, const char *>::type
 getDataPointer(const T& value) {
-	return value ? getDataPointer(*value) : nullptr;
+	return value.has_value() ? getDataPointer(*value) : nullptr;
 }
 
 template<typename T>
@@ -136,7 +136,7 @@ int getSize(const char(& arr)[N]) {
 template<typename T>
 typename std::enable_if<is_optional<T>::value, int>::type
 getSize(const T& value) {
-	return value ? getSize(*value) : 0;
+	return value.has_value() ? getSize(*value) : 0;
 }
 
 template<typename T>
