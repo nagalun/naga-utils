@@ -15,7 +15,7 @@ namespace uS {
 
 class TaskBuffer {
 	std::unique_ptr<uS::Async, void (*)(uS::Async *)> execCaller;
-	std::thread worker;
+	std::vector<std::thread> workers; // spawns one thread per core
 	std::atomic_flag shouldRun;
 	std::condition_variable cv;
 	std::mutex cvLock;
@@ -25,11 +25,11 @@ class TaskBuffer {
 	std::vector<std::function<void(TaskBuffer &)>> asyncTasks; /* Expensive functions (run on another thread) */
 
 public:
-	TaskBuffer(uS::Loop *);
+	TaskBuffer(uS::Loop *, std::size_t numWorkers = std::thread::hardware_concurrency());
 	~TaskBuffer();
 
 	void prepareForDestruction();
-	void setWorkerThreadSchedulingPriorityToLowestPossibleValueAllowedByTheOperatingSystem();
+	void setWorkerThreadsSchedulingPriorityToLowestPossibleValueAllowedByTheOperatingSystem();
 
 	/* Thread safe */
 	void runInMainThread(std::function<void(TaskBuffer &)> &&);

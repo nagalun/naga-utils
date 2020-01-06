@@ -12,7 +12,7 @@ constexpr auto asyncDeleter = [] (uS::Async * a) {
 	a->close();
 };
 
-TaskBuffer::TaskBuffer(uS::Loop * loop)
+TaskBuffer::TaskBuffer(uS::Loop * loop, std::size_t numWorkers)
 : execCaller(new uS::Async(loop), asyncDeleter) {
 	execCaller->setData(this);
 	execCaller->start(TaskBuffer::doExecuteMainThreadTasks);
@@ -20,13 +20,24 @@ TaskBuffer::TaskBuffer(uS::Loop * loop)
 	//shouldRun = ATOMIC_FLAG_INIT;
 	shouldRun.clear();
 	shouldRun.test_and_set();
-	worker = std::thread([this] { executeTasks(); });
+
+	if (numWorkers < 1) {
+		numWorkers = 1;
+	}
+
+	for (int i = 0; i < numWorkers; i++) {
+		workers.emplace_back([this] { executeTasks(); });
+	}
+
+	std::cout << workers.size() << " workers created!" << std::endl;
 }
 
 TaskBuffer::~TaskBuffer() {
 	shouldRun.clear();
-	cv.notify_one();
-	worker.join();
+	cv.notify_all();
+	for (auto& worker : workers) {
+		worker.join();
+	}
 }
 
 void TaskBuffer::prepareForDestruction() {
@@ -36,11 +47,13 @@ void TaskBuffer::prepareForDestruction() {
 	execCaller = nullptr;
 }
 
-void TaskBuffer::setWorkerThreadSchedulingPriorityToLowestPossibleValueAllowedByTheOperatingSystem() {
+void TaskBuffer::setWorkerThreadsSchedulingPriorityToLowestPossibleValueAllowedByTheOperatingSystem() {
 #ifndef __WIN32
 	sched_param param = { 0 };
-	if (auto ret = pthread_setschedparam(worker.native_handle(), SCHED_IDLE, &param)) {
-		std::cerr << "pthread_setschedparam failed (" << ret << "): " << strerror(ret) << std::endl;
+	for (auto& worker : workers) {
+		if (auto ret = pthread_setschedparam(worker.native_handle(), SCHED_IDLE, &param)) {
+			std::cerr << "pthread_setschedparam failed (" << ret << "): " << strerror(ret) << std::endl;
+		}
 	}
 #else
 	std::cerr << __func__ << ": not supported for this platform" << std::endl;
@@ -61,11 +74,13 @@ void TaskBuffer::executeMainThreadTasks() {
 	}
 
 	std::vector<std::function<void(TaskBuffer &)>> tasks;
+	
 	{
 		std::lock_guard<std::mutex> lk(mtTaskLock);
-		std::swap(tasks, mtTasks);
+		tasks.swap(mtTasks);
 	}
-	for (auto & func : tasks) {
+
+	for (auto& func : tasks) {
 		func(*this);
 	}
 }
@@ -75,18 +90,28 @@ void TaskBuffer::executeTasks() {
 	do {
 		if (!asyncTasks.empty()) {
 			std::vector<std::function<void(TaskBuffer &)>> tasks;
+
 			{
 				std::lock_guard<std::mutex> lk(taskLock);
-				std::swap(tasks, asyncTasks);
+				// this takes the whole vector, not just one function, but,
+				// if functions are queuing up this fast the other threads should
+				// be able to get work too while this blocks
+				tasks.swap(asyncTasks);
 			}
-			for (auto & func : tasks) {
+
+			for (auto& func : tasks) {
 				func(*this);
 			}
+
 		} else {
 			/* Only wait if the vector is empty */
-			cv.wait_for(uLock, std::chrono::seconds(5));
+			cv.wait_for(uLock, std::chrono::seconds(10));
 		}
+
 	} while (shouldRun.test_and_set());
+
+	shouldRun.clear(); // notify another thread
+	cv.notify_one(); // just in case it is waiting
 }
 
 void TaskBuffer::runInMainThread(std::function<void(TaskBuffer &)> && func) {
@@ -94,6 +119,7 @@ void TaskBuffer::runInMainThread(std::function<void(TaskBuffer &)> && func) {
 		std::lock_guard<std::mutex> lk(mtTaskLock);
 		mtTasks.push_back(std::move(func));
 	}
+
 	execCaller->send();
 }
 
@@ -102,5 +128,6 @@ void TaskBuffer::queue(std::function<void(TaskBuffer &)> && func) {
 		std::lock_guard<std::mutex> lk(taskLock);
 		asyncTasks.push_back(std::move(func));
 	}
+
 	cv.notify_one();
 }
