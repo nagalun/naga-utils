@@ -1,20 +1,35 @@
 #include "varints.hpp"
 
 #include <string>
-#include <stdexcept>
 #include <algorithm>
+
+#if __cpp_exceptions
+#	include <stdexcept>
+#else
+#	include <errno.h>
+#endif
 
 u64 decodeUnsignedVarint(const u8 * const data, sz_t &decodedBytes, sz_t maxBytes) {
 	sz_t i = 0;
 	u64 decoded_value = 0;
 	sz_t shift_amount = 0;
 
+#if !__cpp_exceptions
+	// clear last error
+	errno = 0;
+#endif
+
 	do {
 		if (maxBytes-- == 0) {
+#if __cpp_exceptions
 			throw std::length_error("Varint too big!");
+#else
+			errno = ERANGE;
+			return -1;
+#endif
 		}
-		
-		decoded_value |= (u64)(data[i] & 0x7F) << shift_amount;     
+
+		decoded_value |= (u64)(data[i] & 0x7F) << shift_amount;
 		shift_amount += 7;
 	} while ((data[i++] & 0x80) != 0);
 

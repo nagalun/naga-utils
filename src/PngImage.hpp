@@ -21,7 +21,7 @@ public:
 	PngImage();
 	PngImage(const std::string&);
 	PngImage(u8* filebuf, sz_t len);
-	PngImage(u32 w, u32 h, RGB_u = {255, 255, 255});
+	PngImage(u32 w, u32 h, RGB_u = {255, 255, 255, 255});
 
 	u8 getChannels() const;
 	u32 getWidth() const;
