@@ -93,7 +93,8 @@ class CurlSocket : public uS::Poll {
 public:
 	CurlSocket(uS::Loop * loop, AsyncCurl * ah, curl_socket_t fd)
 	: Poll(loop, static_cast<int>(fd)),
-	  ah(ah) { }
+	  ah(ah),
+	  cb(nullptr) { }
 
 	void start(uS::Loop * loop, int events, void (*callback)(AsyncCurl *, CurlSocket *, int status, int events)) {
 		cb = callback;

@@ -47,7 +47,8 @@ class PostgresSocket : uS::Poll {
 public:
 	PostgresSocket(AsyncPostgres * ap, int socketfd)
 	: Poll(ap->loop, socketfd),
-	  ap(ap) { }
+	  ap(ap),
+	  cb(nullptr) { }
 
 	void start(int events, void (*callback)(AsyncPostgres *, PostgresSocket *, int status, int events)) {
 		cb = callback;
@@ -309,6 +310,9 @@ void AsyncPostgres::manageSocketEvents(bool needsWrite) {
 					std::cerr << "[Postgre/manageSocketEvents()]: Bad result status " << PQresStatus(s) << std::endl;
 					printLastError();
 					break;
+
+				default:
+					break;
 			}
 
 			currentCommandReturnedResult(r, finished);
@@ -366,7 +370,7 @@ void AsyncPostgres::nextCmdCallerCallback(uS::Async * a) {
 }
 
 
-AsyncPostgres::Query::Query(int prio, std::string cmd, const char ** vals, const int * lens, const int * fmts, int n)
+AsyncPostgres::Query::Query(int prio, std::string cmd, const char * const * vals, const int * lens, const int * fmts, int n)
 : command(std::move(cmd)),
   onDone([] (AsyncPostgres::Result) {}),
   values(vals),
@@ -451,6 +455,9 @@ bool AsyncPostgres::Result::success() const {
 		case PGRES_TUPLES_OK:
 		case PGRES_SINGLE_TUPLE:
 			return true;
+
+		default:
+			break;
 	}
 
 	return false;
@@ -462,6 +469,9 @@ bool AsyncPostgres::Result::expectMoreResults() const {
 		case PGRES_COPY_IN:
 		case PGRES_SINGLE_TUPLE:
 			return true;
+
+		default:
+			break;
 	}
 
 	return false;

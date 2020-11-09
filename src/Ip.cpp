@@ -42,12 +42,12 @@ Ip::Ip()
 
 bool Ip::isLocal() const {
 	static const Ip local("::1");
-	return *this == local || isIpv4() && (get4() & 0xFF) == 0x7F;
+	return *this == local || (isIpv4() && (get4() & 0xFF) == 0x7F);
 }
 
 bool Ip::calculateIsIpv4() const {
 	static const std::array<u8, 12> prefix{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF};
-	for (int i = 0; i < prefix.size(); i++) { // should optimize?
+	for (sz_t i = 0; i < prefix.size(); i++) { // should optimize?
 		if (address[i] != prefix[i]) {
 			return false;
 		}
@@ -75,7 +75,13 @@ u32 Ip::get4() const {
 		u32 ip;
 	};
 
-	return (I4{address[12], address[13], address[14], address[15]}).ip;
+	I4 ip4;
+	ip4.a = address[12];
+	ip4.b = address[13];
+	ip4.c = address[14];
+	ip4.d = address[15];
+
+	return ip4.ip;
 }
 
 std::string_view Ip::toString() const {

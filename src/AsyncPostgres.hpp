@@ -102,7 +102,7 @@ private:
 class AsyncPostgres::Query {
 	std::string command;
 	std::function<void(Result)> onDone;
-	const char ** values;
+	const char * const * values;
 	const int * lengths;
 	const int * formats;
 	AsyncPostgres::QueryQueue::const_iterator queue_it;
@@ -110,7 +110,7 @@ class AsyncPostgres::Query {
 	const int priority;
 
 public:
-	Query(int prio, std::string, const char **, const int *, const int *, int);
+	Query(int prio, std::string, const char * const *, const int *, const int *, int);
 	virtual ~Query();
 
 	bool isDone() const;
@@ -132,9 +132,9 @@ template<typename... Ts>
 class AsyncPostgres::TemplatedQuery : public AsyncPostgres::Query {
 	// we want to store the actual values, not references/pointers to them, so decay types
 	std::tuple<typename std::decay<Ts>::type...> valueStorage;
-	const char * realValues[sizeof... (Ts)];
-	const int realLengths[sizeof... (Ts)];
-	const int realFormats[sizeof... (Ts)];
+	const std::array<const char *, sizeof... (Ts)> realValues;
+	const std::array<int, sizeof... (Ts)> realLengths;
+	const std::array<int, sizeof... (Ts)> realFormats;
 
 	template<std::size_t... Is>
 	TemplatedQuery(std::index_sequence<Is...>, int prio, std::string, Ts&&...);

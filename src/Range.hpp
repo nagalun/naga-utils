@@ -10,3 +10,5 @@ public:
 
 	operator T() const;
 };
+
+#include "Range.tpp"

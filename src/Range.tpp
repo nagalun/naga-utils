@@ -1,3 +1,4 @@
+#include "Range.hpp"
 #include <stdexcept>
 #include <string>
 
