@@ -9,6 +9,11 @@ public:
 	using Rate = u16;
 	using Per = u16;
 	using Allowance = float;
+	enum class Punishment {
+		NONE,
+		SET_TO_ZERO,
+		ALLOW_NEGATIVE
+	};
 
 private:
 	u16 rate;
@@ -24,7 +29,7 @@ public:
 	void set(Rate, Per, Allowance);
 
 	bool canSpend(Rate = 1) const;
-	bool spend(Rate = 1, bool punishing = false);
+	bool spend(Rate = 1, Punishment = Punishment::NONE);
 
 	Rate getRate() const;
 	Per getPer() const;

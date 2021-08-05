@@ -26,12 +26,22 @@ bool Bucket::canSpend(Rate count) const {
 	return count <= getAllowance();
 }
 
-bool Bucket::spend(Rate count, bool punishing) {
+bool Bucket::spend(Rate count, Punishment ptype) {
 	updateAllowance();
 
 	if (allowance < count) {
-		if (punishing) {
-			allowance = 0;
+		switch (ptype) {
+			case Punishment::SET_TO_ZERO:
+				allowance = 0;
+				break;
+
+			case Punishment::ALLOW_NEGATIVE:
+				allowance -= count;
+				allowance = allowance < -rate * 2 ? -rate * 2 : allowance;
+				break;
+				
+			default:
+				break;
 		}
 
 		return false;
