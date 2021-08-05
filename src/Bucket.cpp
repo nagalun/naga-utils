@@ -13,9 +13,7 @@ Bucket::Bucket(Bucket::Rate rate, Bucket::Per per, Bucket::Allowance allowance)
 void Bucket::set(Bucket::Rate nrate, Bucket::Per nper) {
 	rate = nrate;
 	per = nper < 1 ? 1 : nper;
-	if (allowance > nrate) {
-		allowance = nrate;
-	}
+	updateAllowance();
 }
 
 void Bucket::set(Bucket::Rate nrate, Bucket::Per nper, Bucket::Allowance nallowance) {
@@ -25,26 +23,11 @@ void Bucket::set(Bucket::Rate nrate, Bucket::Per nper, Bucket::Allowance nallowa
 }
 
 bool Bucket::canSpend(Rate count) const {
-	const auto now = std::chrono::steady_clock::now();
-	std::chrono::duration<Allowance> passed = now - lastCheck;
-	Allowance ace = allowance + passed.count() * (static_cast<Allowance>(rate) / per);
-
-	if (ace > rate) {
-		ace = rate;
-	}
-
-	return count <= ace;
+	return count <= getAllowance();
 }
 
 bool Bucket::spend(Rate count) {
-	const auto now = std::chrono::steady_clock::now();
-	std::chrono::duration<Allowance> passed = now - lastCheck;
-	lastCheck = now;
-	allowance += passed.count() * (static_cast<Allowance>(rate) / per);
-
-	if (allowance > rate) {
-		allowance = rate;
-	}
+	updateAllowance();
 
 	if (allowance < count) {
 		return false;
@@ -63,5 +46,17 @@ Bucket::Per Bucket::getPer() const {
 }
 
 Bucket::Allowance Bucket::getAllowance() const {
+	const auto now = std::chrono::steady_clock::now();
+	std::chrono::duration<Allowance> passed = now - lastCheck;
+	Allowance ace = allowance + passed.count() * (static_cast<Allowance>(rate) / per);
+	return ace > rate ? rate : ace;
+}
+
+Bucket::Allowance Bucket::updateAllowance() {
+	const auto now = std::chrono::steady_clock::now();
+	std::chrono::duration<Allowance> passed = now - lastCheck;
+	Allowance ace = allowance + passed.count() * (static_cast<Allowance>(rate) / per);
+	allowance = ace > rate ? rate : ace;
+	lastCheck = now;
 	return allowance;
 }
