@@ -24,7 +24,7 @@ public:
 	void set(Rate, Per, Allowance);
 
 	bool canSpend(Rate = 1) const;
-	bool spend(Rate = 1);
+	bool spend(Rate = 1, bool punishing = false);
 
 	Rate getRate() const;
 	Per getPer() const;

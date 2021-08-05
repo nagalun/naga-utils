@@ -26,10 +26,14 @@ bool Bucket::canSpend(Rate count) const {
 	return count <= getAllowance();
 }
 
-bool Bucket::spend(Rate count) {
+bool Bucket::spend(Rate count, bool punishing) {
 	updateAllowance();
 
 	if (allowance < count) {
+		if (punishing) {
+			allowance = 0;
+		}
+
 		return false;
 	}
 
