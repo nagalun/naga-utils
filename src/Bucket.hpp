@@ -29,4 +29,7 @@ public:
 	Rate getRate() const;
 	Per getPer() const;
 	Allowance getAllowance() const;
+
+private:
+	Allowance updateAllowance();
 };
