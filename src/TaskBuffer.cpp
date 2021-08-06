@@ -8,6 +8,8 @@
 #include <iostream>
 #include <uWS.h>
 
+#include <explints.hpp>
+
 constexpr auto asyncDeleter = [] (uS::Async * a) {
 	a->close();
 };
@@ -25,7 +27,7 @@ TaskBuffer::TaskBuffer(uS::Loop * loop, std::size_t numWorkers)
 		numWorkers = 1;
 	}
 
-	for (int i = 0; i < numWorkers; i++) {
+	for (sz_t i = 0; i < numWorkers; i++) {
 		workers.emplace_back([this] { executeTasks(); });
 	}
 

@@ -39,6 +39,7 @@ std::string serializeSpecial(std::string str) {
 		switch (str[i]) {
 			case '\n':
 				str[i] = 'n';
+				[[fallthrough]];
 			case '\\':
 				str.insert(str.begin() + i, '\\');
 				i += 2;

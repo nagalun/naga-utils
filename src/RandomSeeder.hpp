@@ -8,6 +8,8 @@ class RandomSeeder {
 public:
 	RandomSeeder();
 
+	using result_type = std::random_device::result_type;
+
 	template<typename RandomAccessIterator>
 	void generate(RandomAccessIterator, RandomAccessIterator);
 };

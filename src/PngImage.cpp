@@ -89,7 +89,7 @@ static struct img_t loadPng(u8* fbuffer, int len, u8 chans,
 
 	auto out(std::make_unique<u8[]>(pngWidth * pngHeight * chans));
 
-	png_uint_32 rowBytes = png_get_rowbytes(pngPtr, infoPtr);
+	//png_uint_32 rowBytes = png_get_rowbytes(pngPtr, infoPtr);
 
 	png_bytep rowPointers[pngHeight];
 	for (png_uint_32 row = 0; row < pngHeight; row++) {

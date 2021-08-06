@@ -181,11 +181,11 @@ byteSwap(T& value) {
 template<typename... Ts>
 template<std::size_t... Is>
 AsyncPostgres::TemplatedQuery<Ts...>::TemplatedQuery(std::index_sequence<Is...>, int prio, std::string cmd, Ts&&... params)
-: Query(prio, std::move(cmd), realValues, realLengths, realFormats, sizeof... (Ts)),
+: Query(prio, std::move(cmd), realValues.data(), realLengths.data(), realFormats.data(), sizeof... (Ts)),
   valueStorage(std::forward<Ts>(params)...),
   realValues{detail::getDataPointer(std::get<Is>(valueStorage))...},
   realLengths{detail::getSize(std::get<Is>(valueStorage))...},
-  realFormats{(Is, 1)...} { // set as many ones as there are type indexes
+  realFormats{(static_cast<void>(Is), 1)...} { // set as many ones as there are type indexes
 	(detail::byteSwap(std::get<Is>(valueStorage)), ...);
 }
 
