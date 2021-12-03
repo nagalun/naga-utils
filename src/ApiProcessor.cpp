@@ -23,6 +23,7 @@ ApiProcessor::ApiProcessor(uWS::Hub& h) {
 			rs = new ll::shared_ptr<Request>(new Request(res, &req));
 			res->getHttpSocket()->setUserData(rs);
 		} else {
+			res->hasHead = false;
 			(*rs)->updateData(res, &req);
 		}
 
