@@ -1,0 +1,14 @@
+-xc++
+-std=c++20
+-Wall
+-Wshadow
+-Weffc++
+-Wextra
+-pedantic-errors
+-Wno-unused-parameter
+-Wno-format
+-I./lib/uWebSockets/src/
+-I./src/
+-iquote
+./src/
+-DDEBUG=1
