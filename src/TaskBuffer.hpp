@@ -7,14 +7,10 @@
 #include <thread>
 #include <atomic>
 #include <memory>
-
-namespace uS {
-	struct Async;
-	struct Loop;
-}
+#include "Poll.hpp"
 
 class TaskBuffer {
-	std::unique_ptr<uS::Async, void (*)(uS::Async *)> execCaller;
+	std::unique_ptr<nev::Async> execCaller;
 	std::vector<std::thread> workers; // spawns one thread per core
 	std::atomic_flag shouldRun;
 	std::condition_variable cv;
@@ -25,18 +21,21 @@ class TaskBuffer {
 	std::vector<std::function<void(TaskBuffer &)>> asyncTasks; /* Expensive functions (run on another thread) */
 
 public:
-	TaskBuffer(uS::Loop *, std::size_t numWorkers = std::thread::hardware_concurrency());
+	TaskBuffer(nev::Loop&, std::size_t numWorkers = std::thread::hardware_concurrency());
+
+	TaskBuffer(const TaskBuffer&) = delete;
+	const TaskBuffer& operator=(const TaskBuffer&) = delete;
+
 	~TaskBuffer();
 
 	void prepareForDestruction();
 	void setWorkerThreadsSchedulingPriorityToLowestPossibleValueAllowedByTheOperatingSystem();
 
 	/* Thread safe */
-	void runInMainThread(std::function<void(TaskBuffer &)> &&);
-	void queue(std::function<void(TaskBuffer &)> &&);
+	void runInMainThread(std::function<void(TaskBuffer &)>);
+	void queue(std::function<void(TaskBuffer &)>);
 
 private:
-	static void doExecuteMainThreadTasks(uS::Async *);
 	void executeMainThreadTasks();
 	void executeTasks();
 };

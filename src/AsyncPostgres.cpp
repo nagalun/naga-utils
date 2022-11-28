@@ -1,21 +1,24 @@
 #include "AsyncPostgres.hpp"
+#include "Poll.hpp"
 
 #include <iostream>
 #include <stdexcept>
 #include <utility>
+#include <chrono>
 
 #include <explints.hpp>
 #include <TimedCallbacks.hpp>
 #include <utils.hpp>
 #include <stringparser.hpp>
 
-#include <uWS.h>
+using namespace nev;
+using namespace std::chrono_literals;
 
 bool AsyncPostgres::QuerySharedPtrComparator::operator()(const ll::shared_ptr<Query>& lhs, const ll::shared_ptr<Query>& rhs) const {
 	return *lhs > *rhs;
 }
 
-void getStringPointers(const std::unordered_map<std::string, std::string>& str, const char ** k, const char ** v) {
+static void getStringPointers(const std::unordered_map<std::string, std::string>& str, const char ** k, const char ** v) {
 	sz_t i = 0;
 	for (auto it = str.begin(); it != str.end(); ++it) {
 		k[i] = it->first.c_str();
@@ -27,77 +30,46 @@ void getStringPointers(const std::unordered_map<std::string, std::string>& str, 
 	k[i] = v[i] = nullptr;
 }
 
-int postgresEvToUv(int ev) {
-	switch (ev) {
+static int postgresEvToUv(int ev) {
+	using Evt = nev::Poll::Evt;
+	switch (ev) { // the pg enum is not composed of powers of two
 		case PGRES_POLLING_READING:
-			return UV_READABLE;
+			return Evt::READABLE;
 
 		case PGRES_POLLING_WRITING:
-			return UV_WRITABLE;
+			return Evt::WRITABLE;
 
 		default:
 			return 0;
 	}
 }
 
-class PostgresSocket : uS::Poll {
-	AsyncPostgres * ap;
-	void (*cb)(AsyncPostgres *, PostgresSocket *, int, int);
-
-public:
-	PostgresSocket(AsyncPostgres * ap, int socketfd)
-	: Poll(ap->loop, socketfd),
-	  ap(ap),
-	  cb(nullptr) { }
-
-	void start(int events, void (*callback)(AsyncPostgres *, PostgresSocket *, int status, int events)) {
-		cb = callback;
-		Poll::setCb([] (Poll * p, int s, int e) {
-			PostgresSocket * cs = static_cast<PostgresSocket *>(p);
-			cs->cb(cs->ap, cs, s, e);
-		});
-
-		Poll::start(ap->loop, this, events);
-	}
-
-	void change(int events) {
-		Poll::change(ap->loop, this, events);
-	}
-
-	void close() {
-		Poll::stop(ap->loop);
-		Poll::close(ap->loop, [] (Poll * p) {
-			delete static_cast<PostgresSocket *>(p);
-		});
-	}
-
-	void setCb(void (*callback)(AsyncPostgres *, PostgresSocket *, int status, int events)) {
-		cb = callback;
-	}
-};
-
-AsyncPostgres::AsyncPostgres(uS::Loop * loop, TimedCallbacks& tc)
+AsyncPostgres::AsyncPostgres(Loop& loop, TimedCallbacks& tc)
 : loop(loop),
   tc(tc),
-  nextCommandCaller(nullptr, [] (uS::Async * a) { a->close(); }),
+  nextCommandCaller(),
   pgConn(nullptr, PQfinish),
-  pSock(nullptr, [] (PostgresSocket * p) { p->close(); }),
+  pSock(),
   queries(QuerySharedPtrComparator()),
   currentQuery(queries.end()),
-  notifFunc([] (Notification) {}),
-  connChangeFunc([] (ConnStatusType) {}),
+  notifFunc(nullptr),
+  connChangeFunc(nullptr),
   stopOnceEmpty(false),
   busy(false),
   awaitingResponse(false),
-  autoReconnect(true) { }
+  autoReconnect(true) {
+
+	nextCommandCaller = loop.async([this] (Async&) {
+		processNextCommand();
+	});
+}
 
 void AsyncPostgres::connect(std::unordered_map<std::string, std::string> connParams, bool expandDbname) {
-	const char * keywords[connParams.size() + 1]; // +1 for null termination
-	const char * values[connParams.size() + 1];
-	getStringPointers(connParams, keywords, values);
+	std::vector<const char*> keywords(connParams.size() + 1); // +1 for null termination
+	std::vector<const char*> values(connParams.size() + 1);
+	getStringPointers(connParams, keywords.data(), values.data());
 
-	prepareForConnection();
-	pgConn.reset(PQconnectStartParams(keywords, values, expandDbname));
+	pgConn.reset(PQconnectStartParams(keywords.data(), values.data(), expandDbname));
 	if (!pgConn) {
 		throw std::bad_alloc();
 	}
@@ -131,11 +103,10 @@ void AsyncPostgres::disconnect() {
 
 	pSock = nullptr;
 	pgConn = nullptr;
-	nextCommandCaller = nullptr;
 	busy = false;
 	stopOnceEmpty = false;
 
-	if (notify) {
+	if (notify && connChangeFunc) {
 		connChangeFunc(getStatus());
 	}
 }
@@ -189,27 +160,25 @@ void AsyncPostgres::onNotification(std::function<void(Notification)> f) {
 }
 
 void AsyncPostgres::maybeSignalDisconnectionAndReconnect() {
-	if (!isConnected()) {
-		pSock = nullptr;
-		connChangeFunc(getStatus());
-
-		if (isAutoReconnectEnabled()) {
-			tc.startTimer([this] {
-				if (!reconnect()) {
-					std::cerr << "Couldn't reconnect to DB! (" << getLastErrorFirstLine() << "), retrying." << std::endl;
-					return true;
-				}
-
-				return false;
-			}, 2000);
-		}
+	if (isConnected()) {
+		return;
 	}
-}
 
-void AsyncPostgres::prepareForConnection() {
-	nextCommandCaller.reset(new uS::Async(loop));
-	nextCommandCaller->setData(this);
-	nextCommandCaller->start(AsyncPostgres::nextCmdCallerCallback);
+	pSock = nullptr;
+	if (connChangeFunc) {
+		connChangeFunc(getStatus());
+	}
+
+	if (isAutoReconnectEnabled()) {
+		tc.timer([this] {
+			if (!reconnect()) {
+				std::cerr << "Couldn't reconnect to DB! (" << getLastErrorFirstLine() << "), retrying." << std::endl;
+				return true;
+			}
+
+			return false;
+		}, 2000ms);
+	}
 }
 
 template<PostgresPollingStatusType(*PollFunc)(PGconn *)>
@@ -220,26 +189,31 @@ void AsyncPostgres::pollConnection() {
 
 	busy = true; // queue queries until we're completely connected
 
-	pSock.reset(new PostgresSocket(this, PQsocket(pgConn.get())));
-	pSock->start(UV_WRITABLE, +[] (AsyncPostgres * ap, PostgresSocket * ps, int s, int e) {
-		int newEvs = PollFunc(ap->pgConn.get());
+	pSock = loop.poll(PQsocket(pgConn.get()));
+	pSock->start(Poll::Evt::WRITABLE, [this] (Poll& p, int s, int e) {
+		int newEvs = PollFunc(pgConn.get());
 		switch (newEvs) {
 			case PGRES_POLLING_FAILED:
-				std::cerr << "PGRES_POLLING_FAILED: " << ap->getLastErrorFirstLine() << std::endl;
-				ap->busy = false;
-				ap->maybeSignalDisconnectionAndReconnect();
+				std::cerr << "PGRES_POLLING_FAILED: " << getLastErrorFirstLine() << std::endl;
+				busy = false;
+				maybeSignalDisconnectionAndReconnect();
 				break;
 
 			case PGRES_POLLING_OK:
-				ps->setCb(AsyncPostgres::socketCallback);
-				ap->connChangeFunc(ap->getStatus());
-				ap->busy = false;
-				ap->signalCompletion();
+				p.start(Poll::Evt::READABLE | Poll::Evt::WRITABLE, [this] (Poll& p, int s, int e) {
+					socketCallback(p, s, e);
+				});
+
+				if (connChangeFunc) {
+					connChangeFunc(getStatus());
+				}
+
+				signalCompletion();
 				break;
 
 			case PGRES_POLLING_WRITING:
 			case PGRES_POLLING_READING:
-				ps->change(postgresEvToUv(newEvs));
+				p.change(postgresEvToUv(newEvs));
 				break;
 		}
 	});
@@ -250,30 +224,34 @@ void AsyncPostgres::signalCompletion() {
 }
 
 void AsyncPostgres::processNextCommand() {
-	if (!queries.empty()) {
-		busy = true;
-		currentQuery = queries.begin();
-		if (!(*currentQuery)->send(pgConn.get())) {
-			currentQuery = queries.end();
-			printLastError();
-			if (isConnected()) {
-				// this should never happen, but just in case try again in 5 secs
-				tc.startTimer([this] {
-					processNextCommand();
-					return false;
-				}, 5000);
-			} else {
-				maybeSignalDisconnectionAndReconnect();
-			}
-		} else {
-			awaitingResponse = true;
-		}
-	} else {
-		busy = false;
+	busy = !queries.empty();
+	if (!busy) {
 		if (stopOnceEmpty) {
 			disconnect();
 		}
+
+		return;
 	}
+
+	currentQuery = queries.begin();
+	if ((*currentQuery)->send(pgConn.get())) {
+		awaitingResponse = true;
+		return;
+	}
+
+	// if query sending failed
+	currentQuery = queries.end();
+	printLastError();
+	if (!isConnected()) {
+		maybeSignalDisconnectionAndReconnect();
+		return;
+	}
+
+	// this should never happen, but just in case try again in 5 secs
+	tc.timer([this] {
+		processNextCommand();
+		return false;
+	}, 5000ms);
 }
 
 // won't work yet with single row mode cb
@@ -320,8 +298,8 @@ void AsyncPostgres::manageSocketEvents(bool needsWrite) {
 	}
 
 	// always listen for read because the server can send us notifs at any time
-	int evs = UV_READABLE;
-	evs |= needsWrite ? UV_WRITABLE : 0;
+	int evs = Poll::Evt::READABLE;
+	evs |= needsWrite ? Poll::Evt::WRITABLE : 0;
 
 	pSock->change(evs);
 }
@@ -340,35 +318,32 @@ void AsyncPostgres::throwLastError() {
 	throw std::runtime_error(PQerrorMessage(pgConn.get()));
 }
 
-void AsyncPostgres::socketCallback(AsyncPostgres * ap, PostgresSocket * ps, int s, int e) {
+void AsyncPostgres::socketCallback(Poll& p, int s, int e) {
 	bool needsWrite = false;
 
-	if (e & UV_READABLE) {
-		if (!PQconsumeInput(ap->pgConn.get())) {
-			ap->printLastError();
-			if (!ap->isConnected()) {
-				ap->maybeSignalDisconnectionAndReconnect();
+	if (e & Poll::Evt::READABLE) {
+		if (!PQconsumeInput(pgConn.get())) {
+			printLastError();
+			if (!isConnected()) {
+				maybeSignalDisconnectionAndReconnect();
 				return;
 			}
 		}
 
-		while (PGnotify * p = PQnotifies(ap->pgConn.get())) {
-			ap->notifFunc(p);
+		while (PGnotify * np = PQnotifies(pgConn.get())) {
+			Notification n{np};
+			if (notifFunc) {
+				notifFunc(std::move(n));
+			}
 		}
 	}
 
-	if (e & UV_WRITABLE) {
-		needsWrite = PQflush(ap->pgConn.get());
+	if (e & Poll::Evt::WRITABLE) {
+		needsWrite = PQflush(pgConn.get());
 	}
 
-	ap->manageSocketEvents(needsWrite);
+	manageSocketEvents(needsWrite);
 }
-
-void AsyncPostgres::nextCmdCallerCallback(uS::Async * a) {
-	AsyncPostgres * ap = static_cast<AsyncPostgres *>(a->getData());
-	ap->processNextCommand();
-}
-
 
 AsyncPostgres::Query::Query(int prio, std::string cmd, const char * const * vals, const int * lens, const int * fmts, int n)
 : command(std::move(cmd)),
@@ -433,7 +408,7 @@ sz_t AsyncPostgres::Result::numAffected() const {
 	if (!pgResult) {
 		return 0;
 	}
-	
+
 	std::string_view affected(PQcmdTuples(pgResult.get()));
 
 	return affected.size() ? fromString<sz_t>(affected) : 0;

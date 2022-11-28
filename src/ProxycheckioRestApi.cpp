@@ -1,16 +1,19 @@
 #include "ProxycheckioRestApi.hpp"
 
 #include <iostream>
+#include <chrono>
 
 #include <AsyncCurl.hpp>
 #include <TimedCallbacks.hpp>
 
 #include <nlohmann/json.hpp>
 
+using namespace std::chrono_literals;
+
 ProxycheckioRestApi::ProxycheckioRestApi(AsyncCurl& ac, TimedCallbacks& tc, std::string_view apiKey)
 : ac(ac),
   apiKey(apiKey) {
-	tc.startTimer([this] {
+	tc.timer([this] {
 		auto now(std::chrono::steady_clock::now());
 
 		for (auto it = cache.begin(); it != cache.end();) {
@@ -24,7 +27,7 @@ ProxycheckioRestApi::ProxycheckioRestApi(AsyncCurl& ac, TimedCallbacks& tc, std:
 		}
 
 		return true;
-	}, 60 * 60 * 1000);
+	}, 1h);
 }
 
 void ProxycheckioRestApi::check(Ip ip, std::function<void(std::optional<bool>, nlohmann::json)> cb) {

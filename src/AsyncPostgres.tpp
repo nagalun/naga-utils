@@ -1,3 +1,6 @@
+#pragma once
+#include "AsyncPostgres.hpp"
+
 #include <type_traits>
 #include <stdexcept>
 #include <optional>

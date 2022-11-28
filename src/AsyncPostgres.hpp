@@ -11,14 +11,13 @@
 #include <type_traits>
 #include <typeindex>
 
-#include <fwd_uWS.h>
 #include <explints.hpp>
 #include <tuple.hpp>
 #include <shared_ptr_ll.hpp>
+#include "Poll.hpp"
 
 #include <postgresql/libpq-fe.h>
 
-class PostgresSocket;
 class TimedCallbacks;
 
 class AsyncPostgres {
@@ -36,12 +35,12 @@ public:
 	using QueryQueue = std::multiset<ll::shared_ptr<Query>, QuerySharedPtrComparator>;
 
 private:
-	uS::Loop * loop;
+	nev::Loop& loop;
 	TimedCallbacks& tc;
 
-	std::unique_ptr<uS::Async, void (*)(uS::Async *)> nextCommandCaller;
+	std::unique_ptr<nev::Async> nextCommandCaller;
 	std::unique_ptr<PGconn, void (*)(PGconn *)> pgConn;
-	std::unique_ptr<PostgresSocket, void (*)(PostgresSocket *)> pSock;
+	std::unique_ptr<nev::Poll> pSock;
 	QueryQueue queries;
 	QueryQueue::const_iterator currentQuery; // queries.begin() could change at any time
 
@@ -53,7 +52,7 @@ private:
 	bool autoReconnect;
 
 public:
-	AsyncPostgres(uS::Loop *, TimedCallbacks&);
+	AsyncPostgres(nev::Loop&, TimedCallbacks&);
 
 	void connect(std::unordered_map<std::string, std::string> connParams = {}, bool expandDbname = false);
 	bool reconnect(); // reconnects with the same parameters
@@ -80,7 +79,6 @@ public:
 private:
 	void maybeSignalDisconnectionAndReconnect();
 
-	void prepareForConnection();
 	template<PostgresPollingStatusType(*PollFunc)(PGconn *)>
 	void pollConnection();
 
@@ -93,10 +91,7 @@ private:
 	void printLastError();
 	void throwLastError();
 
-	static void socketCallback(AsyncPostgres *, PostgresSocket *, int, int);
-	static void nextCmdCallerCallback(uS::Async *);
-
-	friend PostgresSocket;
+	void socketCallback(nev::Poll&, int, int);
 };
 
 class AsyncPostgres::Query {

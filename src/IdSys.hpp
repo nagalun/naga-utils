@@ -1,8 +1,9 @@
 #pragma once
 
 #include <set>
+#include <cstdint>
 
-template<typename N>
+template<typename N = std::uint32_t>
 class IdSys {
 	N currentId;
 	std::set<N> freeIds;

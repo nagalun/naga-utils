@@ -4,20 +4,16 @@
 	#include <pthread.h>
 #endif
 
+#include <cstring>
 #include <chrono>
 #include <iostream>
-#include <uWS.h>
 
 #include <explints.hpp>
 
-constexpr auto asyncDeleter = [] (uS::Async * a) {
-	a->close();
-};
-
-TaskBuffer::TaskBuffer(uS::Loop * loop, std::size_t numWorkers)
-: execCaller(new uS::Async(loop), asyncDeleter) {
-	execCaller->setData(this);
-	execCaller->start(TaskBuffer::doExecuteMainThreadTasks);
+TaskBuffer::TaskBuffer(nev::Loop& loop, std::size_t numWorkers) {
+	execCaller = loop.async([this] (nev::Async&) {
+		executeMainThreadTasks();
+	});
 
 	//shouldRun = ATOMIC_FLAG_INIT;
 	shouldRun.clear();
@@ -54,17 +50,12 @@ void TaskBuffer::setWorkerThreadsSchedulingPriorityToLowestPossibleValueAllowedB
 	sched_param param = { 0 };
 	for (auto& worker : workers) {
 		if (auto ret = pthread_setschedparam(worker.native_handle(), SCHED_IDLE, &param)) {
-			std::cerr << "pthread_setschedparam failed (" << ret << "): " << strerror(ret) << std::endl;
+			std::cerr << "pthread_setschedparam failed (" << ret << "): " << std::strerror(ret) << std::endl;
 		}
 	}
 #else
 	std::cerr << __func__ << ": not supported for this platform" << std::endl;
 #endif
-}
-
-void TaskBuffer::doExecuteMainThreadTasks(uS::Async * a) {
-	TaskBuffer * tb = static_cast<TaskBuffer *>(a->getData());
-	tb->executeMainThreadTasks();
 }
 
 void TaskBuffer::executeMainThreadTasks() {
@@ -76,7 +67,7 @@ void TaskBuffer::executeMainThreadTasks() {
 	}
 
 	std::vector<std::function<void(TaskBuffer &)>> tasks;
-	
+
 	{
 		std::lock_guard<std::mutex> lk(mtTaskLock);
 		tasks.swap(mtTasks);
@@ -89,15 +80,17 @@ void TaskBuffer::executeMainThreadTasks() {
 
 void TaskBuffer::executeTasks() {
 	std::unique_lock<std::mutex> uLock(cvLock);
+	std::vector<std::function<void(TaskBuffer &)>> tasks;
+
 	do {
 		if (!asyncTasks.empty()) {
-			std::vector<std::function<void(TaskBuffer &)>> tasks;
-
 			{
 				std::lock_guard<std::mutex> lk(taskLock);
 				// this takes the whole vector, not just one function, but,
 				// if functions are queuing up this fast the other threads should
-				// be able to get work too while this blocks
+				// be able to get work too while tasks execute
+				// it also dances around the vectors's memory blocks so
+				// no new allocations will be made eventually (faster emplace)
 				tasks.swap(asyncTasks);
 			}
 
@@ -105,6 +98,7 @@ void TaskBuffer::executeTasks() {
 				func(*this);
 			}
 
+			tasks.clear();
 		} else {
 			/* Only wait if the vector is empty */
 			cv.wait_for(uLock, std::chrono::seconds(10));
@@ -116,19 +110,19 @@ void TaskBuffer::executeTasks() {
 	cv.notify_one(); // just in case it is waiting
 }
 
-void TaskBuffer::runInMainThread(std::function<void(TaskBuffer &)> && func) {
+void TaskBuffer::runInMainThread(std::function<void(TaskBuffer &)> func) {
 	{
 		std::lock_guard<std::mutex> lk(mtTaskLock);
-		mtTasks.push_back(std::move(func));
+		mtTasks.emplace_back(std::move(func));
 	}
 
 	execCaller->send();
 }
 
-void TaskBuffer::queue(std::function<void(TaskBuffer &)> && func) {
+void TaskBuffer::queue(std::function<void(TaskBuffer &)> func) {
 	{
 		std::lock_guard<std::mutex> lk(taskLock);
-		asyncTasks.push_back(std::move(func));
+		asyncTasks.emplace_back(std::move(func));
 	}
 
 	cv.notify_one();

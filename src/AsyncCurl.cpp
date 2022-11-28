@@ -4,19 +4,20 @@
 #include <memory>
 #include <iostream>
 
-#include <uWS.h>
 #include <curl/curl.h>
 #include <utils.hpp>
 
+using namespace nev;
+
 /* FIXME: Name resolves seem to be blocking (see: c-ares) */
 
-void mc(CURLMcode code) {
+static void mc(CURLMcode code) {
 	if (code != CURLM_OK && code != CURLM_BAD_SOCKET) {
 		throw std::runtime_error(std::string("CURLM call failed: ") + curl_multi_strerror(code));
 	}
 }
 
-void ec(CURLcode code) {
+static void ec(CURLcode code) {
 	if (code != CURLE_OK) {
 		throw std::runtime_error(std::string("CURL call failed: ") + curl_easy_strerror(code));
 	}
@@ -31,14 +32,16 @@ static int noopWriter(char *, std::size_t s, std::size_t n, void *) { return s *
 static int noopReader(char *, std::size_t, std::size_t, void *) { return 0; }
 
 
-inline int curlEvToUv(int curlEvents) {
-	return (curlEvents & CURL_POLL_IN ? UV_READABLE : 0)
-		| (curlEvents & CURL_POLL_OUT ? UV_WRITABLE : 0);
+static inline int curlEvToNev(int curlEvents) {
+	using Evt = Poll::Evt;
+	return (curlEvents & CURL_POLL_IN ? Evt::READABLE : 0)
+		| (curlEvents & CURL_POLL_OUT ? Evt::WRITABLE : 0);
 }
 
-inline int uvEvToCurl(int uvEvents) {
-	return (uvEvents & UV_READABLE ? CURL_CSELECT_IN : 0)
-		| (uvEvents & UV_WRITABLE ? CURL_CSELECT_OUT : 0);
+static inline int nevToCurl(int nevEvents) {
+	using Evt = Poll::Evt;
+	return (nevEvents & Evt::READABLE ? CURL_CSELECT_IN : 0)
+		| (nevEvents & Evt::WRITABLE ? CURL_CSELECT_OUT : 0);
 }
 
 class CurlHandle {
@@ -84,38 +87,6 @@ public:
 private:
 	bool finished(CURLcode result);
 	static sz_t reader(char *, sz_t, sz_t, CurlSmtpHandle *);
-};
-
-class CurlSocket : public uS::Poll {
-	AsyncCurl * ah;
-	void (*cb)(AsyncCurl *, CurlSocket *, int, int);
-
-public:
-	CurlSocket(uS::Loop * loop, AsyncCurl * ah, curl_socket_t fd)
-	: Poll(loop, static_cast<int>(fd)),
-	  ah(ah),
-	  cb(nullptr) { }
-
-	void start(uS::Loop * loop, int events, void (*callback)(AsyncCurl *, CurlSocket *, int status, int events)) {
-		cb = callback;
-		Poll::setCb([] (Poll * p, int s, int e) {
-			CurlSocket * cs = static_cast<CurlSocket *>(p);
-			cs->cb(cs->ah, cs, s, uvEvToCurl(e));
-		});
-
-		Poll::start(loop, this, curlEvToUv(events));
-	}
-
-	void change(uS::Loop * loop, int events) {
-		Poll::change(loop, this, curlEvToUv(events));
-	}
-
-	void close(uS::Loop * loop) {
-		Poll::stop(loop);
-		Poll::close(loop, [] (Poll * p) {
-			delete static_cast<CurlSocket *>(p);
-		});
-	}
 };
 
 AsyncCurl::Result::Result(long httpResp, std::string data, const char * err)
@@ -259,18 +230,16 @@ sz_t CurlSmtpHandle::reader(char * buf, std::size_t size, std::size_t nmemb, Cur
 	return toRead;
 }
 
-AsyncCurl::AsyncCurl(uS::Loop * loop)
+AsyncCurl::AsyncCurl(Loop& loop)
 : localSmtpUrl("smtp://localhost/" + std::string(getDomainname())),
   loop(loop),
-  timer(new uS::Timer(loop)),
+  timer(loop.timer()),
   multiHandle(curl_multi_init()),
   handleCount(0),
   isTimerRunning(false) {
 	if (!multiHandle) {
 		throw std::bad_alloc();
 	}
-
-	timer->setData(this);
 
 	mc(curl_multi_setopt(multiHandle, CURLMOPT_PIPELINING, CURLPIPE_HTTP1 | CURLPIPE_MULTIPLEX));
 	mc(curl_multi_setopt(multiHandle, CURLMOPT_MAX_TOTAL_CONNECTIONS, 8));
@@ -286,9 +255,10 @@ AsyncCurl::AsyncCurl(uS::Loop * loop)
 				ah->stopTimer();
 				break;
 
-			case 0:
-				mc(curl_multi_socket_action(ah->multiHandle, CURL_SOCKET_TIMEOUT, 0, &ah->handleCount));
-				break;
+			//case 0:
+			// // maybe use Loop::defer instead of a 0ms timer
+			//	mc(curl_multi_socket_action(ah->multiHandle, CURL_SOCKET_TIMEOUT, 0, &ah->handleCount));
+			//	break;
 
 			default:
 				ah->startTimer(tmo_ms);
@@ -300,31 +270,31 @@ AsyncCurl::AsyncCurl(uS::Loop * loop)
 
 	mc(curl_multi_setopt(multiHandle, CURLMOPT_SOCKETDATA, this));
 	mc(curl_multi_setopt(multiHandle, CURLMOPT_SOCKETFUNCTION, +[] (CURL * e, curl_socket_t s, int what, void * up, void * sp) -> int {
+		struct Priv { // lazy solution
+			std::unique_ptr<Poll> poll;
+		};
+
 		// listen for event what on socket s of easy handle e, s priv data on sp
 		AsyncCurl * ah = static_cast<AsyncCurl *>(up);
-		CurlSocket * cs = static_cast<CurlSocket *>(sp);
+		Priv * priv = static_cast<Priv *>(sp);
 
 		if (what == CURL_POLL_REMOVE) {
-			if (cs) {
-				cs->close(ah->loop); // also deletes when the event loop is ready
-				mc(curl_multi_assign(ah->multiHandle, s, nullptr));
-			}
+			delete priv;
+			mc(curl_multi_assign(ah->multiHandle, s, nullptr));
+			return 0;
+		}
+
+		if (!priv) {
+			priv = new Priv{ah->loop.poll(static_cast<int>(s))};
+			mc(curl_multi_assign(ah->multiHandle, s, priv));
+
+			priv->poll->start(curlEvToNev(what), [ah, s] (Poll&, int status, int events) {
+				mc(curl_multi_socket_action(ah->multiHandle, s, nevToCurl(events), &ah->handleCount));
+				ah->processCompleted();
+			});
+
 		} else {
-			if (!cs) {
-				cs = new CurlSocket(ah->loop, ah, s);
-				cs->start(ah->loop, what, +[] (AsyncCurl * ah, CurlSocket * cs, int status, int events) {
-					mc(curl_multi_socket_action(ah->multiHandle, reinterpret_cast<curl_socket_t>(cs->getFd()), events, &ah->handleCount));
-					ah->processCompleted();
-
-					if (ah->handleCount == 0) {
-						ah->stopTimer();
-					}
-				});
-
-				mc(curl_multi_assign(ah->multiHandle, s, cs));
-			} else {
-				cs->change(ah->loop, what);
-			}
+			priv->poll->change(curlEvToNev(what));
 		}
 
 		return 0;
@@ -333,7 +303,6 @@ AsyncCurl::AsyncCurl(uS::Loop * loop)
 
 AsyncCurl::~AsyncCurl() {
 	stopTimer();
-	timer->close(); /* This deletes the timer */
 
 	for (CurlHandle * ch : pendingRequests) {
 		delete ch;
@@ -409,8 +378,8 @@ void AsyncCurl::update() {
 }
 
 void AsyncCurl::processCompleted() {
-	int queued;
-	CurlHandle * hdl;
+	int queued = 0;
+	CurlHandle * hdl = nullptr;
 
 	while (CURLMsg * m = curl_multi_info_read(multiHandle, &queued)) {
 		if (m->msg == CURLMSG_DONE) {
@@ -426,15 +395,21 @@ void AsyncCurl::processCompleted() {
 			delete hdl;
 		}
 	}
+
+	if (handleCount == 0) {
+		stopTimer();
+	}
 }
 
 void AsyncCurl::startTimer(long timeout) {
-	if (isTimerRunning) {
-		stopTimer();
-	}
+	stopTimer();
 
 	if (!isTimerRunning) {
-		timer->start(&AsyncCurl::timerCallback, timeout, timeout);
+		timer->start([this] (Timer&) {
+			stopTimer();
+			update();
+		}, timeout, 0);
+
 		isTimerRunning = true;
 	}
 }
@@ -444,10 +419,4 @@ void AsyncCurl::stopTimer() {
 		timer->stop();
 		isTimerRunning = false;
 	}
-}
-
-void AsyncCurl::timerCallback(uS::Timer * timer) {
-	AsyncCurl * const http = static_cast<AsyncCurl *>(timer->getData());
-	http->stopTimer();
-	http->update();
 }

@@ -1,29 +1,61 @@
+#pragma once
+#include "Packet.hpp"
 #include <type_traits>
 #include <array>
 #include <string>
 #include <algorithm>
 #include <optional>
 #include <stdexcept>
+#include <exception>
 #include <tuple>
-#include <assert.h>
+#include <cassert>
+#include <cstdio>
+#include "BufferHelper.hpp"
+#include "templateutils.hpp"
+#include "varints.hpp"
 //#include <iostream>
 
-#include <varints.hpp>
-#include <templateutils.hpp>
-#include <BufferHelper.hpp>
-#include <utils.hpp>
+//#include <utils.hpp>
 
-#include <uWS.h>
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+
+#if __cpp_exceptions
+#	define __try      try
+#	define __catch(X) catch(X)
+#	define __throw    throw
+#	ifdef DEBUG
+#		define BUFFER_ERROR std::length_error(std::string(__PRETTY_FUNCTION__) + ":" + std::to_string(__LINE__))
+#	else
+#		define BUFFER_ERROR std::length_error("Buffer error")
+#	endif
+#else
+#	define __try      if (true)
+#	define __catch(X) if (false)
+#	define __throw
+#	ifdef DEBUG
+#		define BUFFER_ERROR do { \
+			std::fputs("BUFFER_ERROR ON ", stderr); \
+			std::fputs(__PRETTY_FUNCTION__, stderr); \
+			std::fputc(':', stderr); \
+			std::fputs(STR(__LINE__), stderr); \
+			std::fputc('\n', stderr); \
+			std::terminate(); \
+		} while (false)
+#	else
+#		define BUFFER_ERROR do { \
+			std::fputs("BUFFER_ERROR\n", stderr); \
+			std::terminate(); \
+		} while (false)
+#	endif
+#endif
 
 namespace pktdetail {
-#define BUFFER_ERROR std::length_error(std::string(__PRETTY_FUNCTION__) + ":" + std::to_string(__LINE__))
+
 
 //////////////////////////////
 // Forward declarations
 //////////////////////////////
-
-sz_t getSize(const std::type_index& ti);
-sz_t writeToBuf(u8 *& b, const std::type_index& ti, sz_t remaining);
 
 template<typename... Ts>
 sz_t getSize(const std::tuple<Ts...>& t);
@@ -127,7 +159,7 @@ sz_t getTupleBufferSize(const Tuple& t, std::index_sequence<Is...>) {
 
 template<typename... Ts>
 sz_t getSize(const std::tuple<Ts...>& t) {
-	if /*constexpr*/ (are_all_arithmetic<Ts...>::value) {
+	if constexpr (are_all_arithmetic<Ts...>::value) {
 		return add(sizeof(Ts)...);
 	} else {
 		return getTupleBufferSize(t, std::index_sequence_for<Ts...>{});
@@ -155,7 +187,7 @@ getSize(const Container& c) {
 	using T = typename Container::value_type;
 	using Result = is_tuple_arithmetic<T>;
 
-	if /*constexpr*/ (Result::value) {
+	if constexpr (Result::value) {
 		return unsignedVarintSize(c.size()) + Result::size * c.size();
 	}
 
@@ -190,7 +222,7 @@ getSize(const Container& c) {
 
 template<typename T, std::size_t N>
 sz_t getSize(const std::array<T, N>& arr) {
-	if /*constexpr*/ (std::is_arithmetic<T>::value) {
+	if constexpr (std::is_arithmetic<T>::value) {
 		return sizeof(T) * N;
 	} else {
 		sz_t size = 0;
@@ -279,7 +311,7 @@ typename std::enable_if<std::is_arithmetic<N>::value,
 	N>::type
 readFromBuf(const u8 *& b, sz_t remaining) {
 	if (remaining < sizeof(N)) {
-		throw BUFFER_ERROR;
+		__throw BUFFER_ERROR;
 	}
 
 	const u8 * readAt = b;
@@ -296,7 +328,7 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 	using T = typename Container::value_type;
 
 	if (!remaining) {
-		throw BUFFER_ERROR;
+		__throw BUFFER_ERROR;
 	}
 
 	const u8 * readAt = b;
@@ -304,7 +336,7 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 	u64 size = decodeUnsignedVarint(readAt, decodedBytes, remaining);
 
 	if (remaining - decodedBytes < size * sizeof(T)) {
-		throw BUFFER_ERROR;
+		__throw BUFFER_ERROR;
 	}
 
 	b += decodedBytes + size * sizeof(T);
@@ -324,14 +356,14 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 	using T = typename Container::value_type;
 
 	if (!remaining) {
-		throw BUFFER_ERROR;
+		__throw BUFFER_ERROR;
 	}
 
 	sz_t decodedBytes;
 	u64 size = decodeUnsignedVarint(b, decodedBytes, remaining);
 
 	if (remaining - decodedBytes < size) { /* size of the elements will be 1 at least */
-		throw BUFFER_ERROR;
+		__throw BUFFER_ERROR;
 	}
 
 	b += decodedBytes;
@@ -369,7 +401,7 @@ Array staticArrayFromBuf(const u8 *& b, std::index_sequence<Is...>) {
 	const u8 * start = b;
 	b += sizeof(T) * sizeof... (Is);
 
-	if /*constexpr*/ (sizeof(T) == 1) {
+	if constexpr (sizeof(T) == 1) {
 		return Array{start[Is]...};
 	} else {
 		return Array{buf::readBE<T>(start + Is * sizeof(T))...};
@@ -383,9 +415,9 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 	using T = typename Array::value_type;
 	constexpr sz_t size = std::tuple_size<Array>::value;
 
-	if /*constexpr*/ (std::is_arithmetic<T>::value) {
+	if constexpr (std::is_arithmetic<T>::value) {
 		if (remaining < sizeof(T) * size) {
-			throw BUFFER_ERROR;
+			__throw BUFFER_ERROR;
 		}
 
 		return staticArrayFromBuf<Array>(b, std::make_index_sequence<size>{});
@@ -411,36 +443,7 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 	return std::nullopt;
 }
 
-#undef BUFFER_ERROR
 } // namespace pktdetail
-
-template<u8 opCode, typename... Args>
-Packet<opCode, Args...>::Packet(Args... args)
-: PrepMsg(nullptr) {
-	using namespace pktdetail;
-	constexpr bool isFixedSize = are_all_arithmetic<Args...>::value;
-
-	const sz_t size = sizeof(opCode) + (isFixedSize
-		? add(sizeof(Args)...)
-		: add(getSize(args)...));
-
-	u8 buffer[size];
-	u8 * start = &buffer[0];
-	u8 * to = start;
-
-	*to++ = opCode;
-
-	//if /*constexpr*/ (isFixedSize) {
-		//u8 useless[] {((to += buf::writeBE(to, args)), u8(0))...};
-	//	(buf::writeBE(to, args), ...);
-	//} else {
-		//u8 useless[] {(writeToBuf(&to, args, size - (to - start)), u8(0))...};
-		(writeToBuf(to, args, size - (to - start)), ...);
-		assert(sz_t(to - start) == size);
-	//}
-
-	PrepMsg::setPrepared(start, size);
-}
 
 template<u8 opCode, typename... Args>
 std::tuple<Args...> Packet<opCode, Args...>::fromBuffer(const u8 * buffer, sz_t size) {
@@ -450,14 +453,14 @@ std::tuple<Args...> Packet<opCode, Args...>::fromBuffer(const u8 * buffer, sz_t 
 	// fast size check
 	constexpr sz_t expectedSize = add(sizeof(Args)...);
 	if (are_all_arithmetic<Args...>::value && expectedSize != size) {
-		throw std::length_error("Buffer too small/big");
+		__throw BUFFER_ERROR;
 	}
 
 	return std::tuple<Args...>{readFromBuf<Args>(buffer, size - (buffer - start))...};
 }
 
 template<u8 opCode, typename... Args>
-void Packet<opCode, Args...>::one(uWS::WebSocket<uWS::SERVER> * ws, Args... args) {
+std::tuple<std::unique_ptr<u8[]>, sz_t> Packet<opCode, Args...>::toBuffer(Args... args) {
 	using namespace pktdetail;
 	constexpr bool isFixedSize = are_all_arithmetic<Args...>::value;
 
@@ -465,20 +468,22 @@ void Packet<opCode, Args...>::one(uWS::WebSocket<uWS::SERVER> * ws, Args... args
 		? add(sizeof(Args)...)
 		: add(getSize(args)...));
 
-	u8 buffer[size];
-	u8 * start = &buffer[0];
+	auto buf(std::make_unique<u8[]>(size));
+	u8 * start = buf.get();
 	u8 * to = start;
 
 	*to++ = opCode;
 
-	//if /*constexpr*/ (isFixedSize) {
-		//u8 useless[] {((to += buf::writeBE(to, args)), u8(0))...};
-	//	(buf::writeBE(to, args), ...);
-	//} else {
-		//u8 useless[] {(writeToBuf(&to, args, size - (to - start)), u8(0))...};
-		(writeToBuf(to, args, size - (to - start)), ...);
-		assert(sz_t(to - start) == size);
-	//}
+	(writeToBuf(to, args, size - (to - start)), ...);
+	assert(sz_t(to - start) == size);
 
-	ws->send(reinterpret_cast<char *>(start), size, uWS::BINARY);
+	return {std::move(buf), size};
+	//cl.send(reinterpret_cast<char *>(start), size);
 }
+
+#undef BUFFER_ERROR
+#undef __throw
+#undef __catch
+#undef __try
+#undef STR
+#undef STR_HELPER

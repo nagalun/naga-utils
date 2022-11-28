@@ -1,23 +1,22 @@
 #pragma once
 
+#include "explints.hpp"
 #include <tuple>
+#include <memory>
 
-#include <explints.hpp>
-#include <fwd_uWS.h>
-#include <PrepMsg.hpp>
 
 template<u8 opCode, typename... Args>
-struct Packet : public PrepMsg {
+struct Packet {
 	static constexpr u8 code = opCode;
 
-	Packet(Args... args);
+	Packet() = delete;
+	//Packet(Args... args);
 
 	// maybe could be changed to std::optional to avoid exceptions
 	// NOTE: doesn't read opcode!
 	static std::tuple<Args...> fromBuffer(const u8 * buffer, sz_t size);
 
-	// send to a single socket
-	static void one(uWS::WebSocket<true> * ws, Args... args);
+	static std::tuple<std::unique_ptr<u8[]>, sz_t> toBuffer(Args... args);
 };
 
 template<typename F>
@@ -30,4 +29,4 @@ struct fromBufFromLambdaArgs<ReturnType(ClassType::*)(Args...) const> {
 	}
 };
 
-#include "Packet.tpp"
+#include "Packet.tpp" // IWYU pragma: keep

@@ -6,11 +6,9 @@ CPPFLAGS += -std=c++17 -O2
 CPPFLAGS += -I ./src/
 CPPFLAGS += -MMD -MP
 
-UWS       = ./lib/uWebSockets
 JSON      = ./lib/json
 
 CPPFLAGS += -I ./src/
-CPPFLAGS += -I $(UWS)/src/
 CPPFLAGS += -I $(JSON)/include/
 
 TARGET    = libnaga.a

@@ -1,15 +1,14 @@
 #pragma once
 
+#include "Poll.hpp"
 #include <functional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
 #include <unordered_map>
 
-#include <fwd_uWS.h>
 #include <explints.hpp>
 
-class CurlSocket;
 class CurlHandle;
 
 class AsyncCurl {
@@ -19,15 +18,15 @@ public:
 private:
 	std::string localSmtpUrl;
 	std::string smtpSenderName;
-	uS::Loop * loop;
-	uS::Timer * timer;
+	nev::Loop& loop;
+	std::unique_ptr<nev::Timer> timer;
 	void * multiHandle;
 	int handleCount;
 	std::unordered_set<CurlHandle *> pendingRequests;
 	bool isTimerRunning;
 
 public:
-	AsyncCurl(uS::Loop *);
+	AsyncCurl(nev::Loop&);
 	~AsyncCurl();
 
 	int activeHandles() const;
@@ -50,7 +49,6 @@ private:
 	void processCompleted();
 	void startTimer(long);
 	void stopTimer();
-	static void timerCallback(uS::Timer *);
 };
 
 class AsyncCurl::Result {
