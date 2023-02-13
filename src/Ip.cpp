@@ -24,14 +24,14 @@ Ip::Ip(const char * ip) {
 Ip::Ip(const std::string& s) // can't be string_view because str must be null terminated
 : Ip(s.c_str()) { }
 
-constexpr Ip::Ip(u32 ip) // ipv4
+Ip::Ip(u32 ip) // ipv4
 : address{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF,
 		u8(ip), u8(ip >> 8), u8(ip >> 16), u8(ip >> 24)} { }
 
-constexpr Ip::Ip(std::array<u8, 16> ip)
+Ip::Ip(std::array<u8, 16> ip)
 : address(std::move(ip)) { }
 
-constexpr Ip::Ip()
+Ip::Ip()
 : address{0} { }
 
 bool Ip::isLocal() const {
@@ -129,6 +129,25 @@ Ip Ip::fromString(const char * c, sz_t s) {
 
 	return Ip(str.c_str());
 }
+
+Ip Ip::fromBytes(const char * c, sz_t s) {
+	std::array<u8, 16> arr{0};
+
+	if (s != 16 && s != 4) {
+		return Ip();
+	}
+
+	for (sz_t i = 16 - s, j = 0; j < s; i++, j++) {
+		arr[i] = static_cast<u8>(c[j]);
+	}
+
+	return Ip(arr);
+}
+
+Ip Ip::fromBytes(std::string_view bytes) {
+	return fromBytes(bytes.data(), bytes.size());
+}
+
 
 bool Ip::operator ==(const Ip& b) const {
 	return address == b.address;

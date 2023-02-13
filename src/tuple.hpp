@@ -34,6 +34,23 @@ struct lambdaToTuple<ReturnType(ClassType::*)(Args...) const> {
 	using type = std::tuple<Args...>;
 };
 
+template <template<typename> typename t_Predicate, typename ...Ts> struct filterTuple;
+
+template <template<typename> typename t_Predicate, typename ...Ts>
+struct filterTuple<t_Predicate, std::tuple<Ts...>> {
+
+    template<class E>
+    using t_filter_impl = std::conditional_t<
+        t_Predicate<E>::value,
+        std::tuple<E>, std::tuple<>>;
+
+
+    using type = decltype(std::tuple_cat(std::declval<t_filter_impl<Ts>>()...));
+};
+
+template <template<typename> typename t_Predicate, typename ...Ts>
+using filterTuple_t = typename filterTuple<t_Predicate, Ts...>::type;
+
 namespace detail {
 	template<typename F, typename Tuple, typename... Args, std::size_t... Is>
 	constexpr auto mApplyImpl(F&& f, Tuple&& t, std::index_sequence<Is...>, Args&&... preArgs) {

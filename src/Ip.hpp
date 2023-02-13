@@ -4,7 +4,7 @@
 #include <array>
 #include <vector>
 
-#include <explints.hpp>
+#include "explints.hpp"
 
 class Ip {
 	alignas(u64) std::array<u8, 16> address;
@@ -12,9 +12,9 @@ class Ip {
 public:
 	Ip(const char *); // string -> bin conv.
 	Ip(const std::string&);
-	constexpr Ip(u32); // ipv4
-	constexpr Ip(std::array<u8, 16>);
-	constexpr Ip();
+	Ip(u32); // ipv4
+	Ip(std::array<u8, 16>);
+	Ip();
 	//Ip(u8[16]);
 
 	bool isLocal() const;
@@ -28,17 +28,9 @@ public:
 	std::vector<u8> getPgData() const;
 
 	static Ip fromString(const char *, sz_t);
+	static Ip fromBytes(const char *, sz_t);
+	static Ip fromBytes(std::string_view);
 
 	bool operator ==(const Ip&) const;
 	bool operator  <(const Ip&) const;
 };
-
-#if defined(INCLUDE_NLOHMANN_JSON_HPP_) || defined(INCLUDE_NLOHMANN_JSON_FWD_HPP_)
-static inline void to_json(nlohmann::json& j, const Ip& ip) {
-	j = ip.toString();
-}
-
-static inline void from_json(const nlohmann::json& j, Ip& ip) {
-	ip = Ip(j.get<std::string>());
-}
-#endif

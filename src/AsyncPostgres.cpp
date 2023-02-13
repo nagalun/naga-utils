@@ -1,4 +1,5 @@
 #include "AsyncPostgres.hpp"
+#include "OpCancelledException.hpp"
 #include "Poll.hpp"
 
 #include <iostream>
@@ -59,7 +60,7 @@ AsyncPostgres::AsyncPostgres(Loop& loop, TimedCallbacks& tc)
   awaitingResponse(false),
   autoReconnect(true) {
 
-	nextCommandCaller = loop.async([this] (Async&) {
+	nextCommandCaller = loop.async([this] (nev::Async&) {
 		processNextCommand();
 	});
 }
@@ -345,28 +346,64 @@ void AsyncPostgres::socketCallback(Poll& p, int s, int e) {
 	manageSocketEvents(needsWrite);
 }
 
-AsyncPostgres::Query::Query(int prio, std::string cmd, const char * const * vals, const int * lens, const int * fmts, int n)
-: command(std::move(cmd)),
-  onDone([] (AsyncPostgres::Result) {}),
+AsyncPostgres::Query::Query(AsyncPostgres& ap, int prio, std::stop_token st, std::string cmd, const char * const * vals, const int * lens, const int * fmts, int n)
+: ap(ap),
+  stopCb(std::move(st), [this] { this->ap.cancelQuery(*this); }),
+  command(std::move(cmd)),
   values(vals),
   lengths(lens),
   formats(fmts),
   nParams(n),
-  priority(prio) { }
+  priority(prio),
+  expectsResults(true),
+  cancelled(false) { }
 
 AsyncPostgres::Query::~Query() {
-	if (onDone) {
+	if (onDone && expectsResults) {
 		// tell callback we couldn't complete the request
 		onDone(AsyncPostgres::Result(nullptr, nullptr));
 	}
 }
 
+void AsyncPostgres::Query::markCancelled() {
+	cancelled = true;
+}
+
 bool AsyncPostgres::Query::isDone() const {
-	return !onDone;
+	return !expectsResults;
 }
 
 void AsyncPostgres::Query::then(std::function<void(AsyncPostgres::Result)> f) {
-	onDone = std::move(f);
+	if (res) {
+		f(std::move(res));
+	}
+
+	if (expectsResults) {
+		onDone = std::move(f);
+	}
+}
+
+bool AsyncPostgres::Query::await_ready() const noexcept {
+	return cancelled || res || isDone();
+}
+
+void AsyncPostgres::Query::await_suspend(std::coroutine_handle<> h) {
+	then([this, h{std::move(h)}](Result r) {
+		h.resume();
+		onDone = nullptr; // don't resume twice if more data is coming
+	});
+}
+
+AsyncPostgres::Result AsyncPostgres::Query::await_resume() {
+	if (cancelled) {
+		throw OpCancelledException{};
+	}
+
+	if (!res.success()) {
+		res.throwStatus();
+	}
+
+	return std::move(res);
 }
 
 bool AsyncPostgres::Query::operator>(const Query& q) const {
@@ -383,12 +420,15 @@ int AsyncPostgres::Query::send(PGconn * conn) {
 }
 
 void AsyncPostgres::Query::done(AsyncPostgres::Result r) {
+	// currently loses the last result if it wasn't consumed in time
+	expectsResults = r.expectMoreResults();
 	if (onDone) {
-		bool more = r.expectMoreResults();
 		onDone(std::move(r));
-		if (!more) {
+		if (!expectsResults) {
 			onDone = nullptr; // make it impossible to double-complete
 		}
+	} else {
+		res = std::move(r);
 	}
 }
 
@@ -399,6 +439,15 @@ AsyncPostgres::QueryQueue::const_iterator AsyncPostgres::Query::getQueueIterator
 void AsyncPostgres::Query::setQueueIterator(AsyncPostgres::QueryQueue::const_iterator it) {
 	queue_it = it;
 }
+
+AwaiterProxy<AsyncPostgres::Query> operator co_await(ll::shared_ptr<AsyncPostgres::Query> q) {
+	// this looks scary, but a temporary object's lifetime is guaranteed to live for the full co_await expression,
+	// which q indirectly is part of
+	return {*q};
+}
+
+AsyncPostgres::Result::Result()
+: Result(nullptr, nullptr) { }
 
 AsyncPostgres::Result::Result(PGresult * r, PGconn * c)
 : pgResult(r, PQclear),
@@ -456,6 +505,14 @@ ExecStatusType AsyncPostgres::Result::getStatus() const {
 	return pgResult ? PQresultStatus(pgResult.get()) : PGRES_BAD_RESPONSE;
 }
 
+const char* AsyncPostgres::Result::getErrorMessage() const {
+	return pgResult ? PQresultErrorMessage(pgResult.get()) : "no result";
+}
+
+void AsyncPostgres::Result::throwStatus() const {
+	throw Error{getStatus(), getErrorMessage()};
+}
+
 bool AsyncPostgres::Result::canCopyTo() const {
 	return getStatus() == PGRES_COPY_IN;
 }
@@ -482,6 +539,9 @@ bool AsyncPostgres::Result::blockingCopyEnd(const char * err) {
 	return s == 1;
 }
 
+const char* AsyncPostgres::Result::Error::what() const noexcept {
+	return errMsg.c_str();
+}
 
 AsyncPostgres::Result::iterator AsyncPostgres::Result::begin() { return iterator(pgResult.get(), 0); }
 AsyncPostgres::Result::iterator AsyncPostgres::Result::end()   { return iterator(pgResult.get(), size()); }
@@ -514,11 +574,21 @@ AsyncPostgres::Result::Row::ParseException::ParseException(std::vector<std::type
 	message += ">() failed! Caused by: " + demangle(causingExceptionType) + ", what(): " + causingWhat;
 }
 
+AsyncPostgres::Result::Error::Error(ExecStatusType errCode, std::string errMsg)
+: errCode(errCode),
+  errMsg(std::move(errMsg)) { }
+
+ExecStatusType AsyncPostgres::Result::Error::code() const noexcept {
+	return errCode;
+}
+
+const char* AsyncPostgres::Result::Error::codeStr() const noexcept {
+	return PQresStatus(errCode);
+}
+
 const char * AsyncPostgres::Result::Row::ParseException::what() const noexcept {
 	return message.c_str();
 }
-
-
 
 AsyncPostgres::Result::iterator::iterator(PGresult * r, int i)
 : r(r),
@@ -576,4 +646,5 @@ AsyncPostgres::Notification::Notification(PGnotify * n)
 
 std::string_view AsyncPostgres::Notification::channelName() const { return pgNotify->relname; }
 int              AsyncPostgres::Notification::bePid()       const { return pgNotify->be_pid; }
-std::string_view AsyncPostgres::Notification::extra()       const { return pgNotify->extra; }
+std::string_view AsyncPostgres::Notification::extra()       const { return pgNotify->extra;
+}

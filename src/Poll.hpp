@@ -13,11 +13,14 @@ struct Async;
 struct Timer;
 
 struct Loop {
-	virtual ~Loop() = 0;
+	virtual ~Loop();
 
 	virtual std::unique_ptr<Poll> poll(int fd) = 0;
 	virtual std::unique_ptr<Async> async(std::function<void(Async&)> cb) = 0;
 	virtual std::unique_ptr<Timer> timer() = 0;
+
+	// returns a pointer to the native handle, e.g. uv_loop_t
+	virtual void* handle() = 0;
 };
 
 struct Poll {
@@ -26,7 +29,7 @@ struct Poll {
 		WRITABLE = 2
 	};
 
-	virtual ~Poll() = 0;
+	virtual ~Poll();
 
 	virtual bool start(int events, std::function<void(Poll&, int status, int events)> cb) = 0;
 	virtual bool change(int events) = 0;
@@ -34,13 +37,14 @@ struct Poll {
 };
 
 struct Async {
-	virtual ~Async() = 0;
+	virtual ~Async();
 
+	virtual void change(std::function<void(Async&)> cb) = 0;
 	virtual bool send() noexcept = 0; // must be async-signal safe
 };
 
 struct Timer {
-	virtual ~Timer() = 0;
+	virtual ~Timer();
 
 	virtual bool start(std::function<void(Timer&)> cb, std::uint64_t timeout, std::uint64_t repeat = 0) = 0;
 	virtual bool again() = 0;

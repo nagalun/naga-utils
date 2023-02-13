@@ -1,6 +1,6 @@
 #include <cstring>
 
-#include <byteswap.hpp>
+#include "byteswap.hpp"
 
 static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ || __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__,
 	"Host endianness not supported!");

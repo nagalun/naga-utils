@@ -6,7 +6,6 @@
 #include <unordered_map>
 #include <chrono>
 
-#include <explints.hpp>
 #include "Poll.hpp"
 
 class TimedCallbacks {
@@ -35,6 +34,8 @@ public:
 		TimerToken(Iter, TimedCallbacks* tc);
 
 	public:
+		TimerToken();
+
 		TimerToken(const TimerToken&) = delete;
 		const TimerToken& operator=(const TimerToken&) = delete;
 

@@ -127,3 +127,17 @@ void TaskBuffer::queue(std::function<void(TaskBuffer &)> func) {
 
 	cv.notify_one();
 }
+
+Defer TaskBuffer::switchToMain() {
+	return Defer{[this](std::coroutine_handle<> h) {
+		// queue resumption of this handle on the main thread
+		runInMainThread([h{std::move(h)}](TaskBuffer&) { h.resume(); });
+	}};
+}
+
+Defer TaskBuffer::switchToThread() {
+	return Defer{[this](std::coroutine_handle<> h) {
+		// queue resumption of this handle on some thread
+		queue([h{std::move(h)}](TaskBuffer&) { h.resume(); });
+	}};
+}

@@ -1,4 +1,7 @@
-#include <BufferHelper.hpp>
+#pragma once
+#include "rle.hpp"
+
+#include "BufferHelper.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <vector>

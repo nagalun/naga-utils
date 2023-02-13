@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <explints.hpp>
+#include "explints.hpp"
 
 union RGB_u {
 	struct {
@@ -9,7 +9,7 @@ union RGB_u {
 		u8 g;
 		u8 b;
 		u8 a;
-	};
+	} c;
 	u32 rgb;
 };
 

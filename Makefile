@@ -2,13 +2,12 @@ SRC_FILES = $(wildcard src/*.cpp)
 OBJ_FILES = $(SRC_FILES:src/%.cpp=build/%.o)
 DEP_FILES = $(OBJ_FILES:.o=.d)
 
-CPPFLAGS += -std=c++17 -O2
-CPPFLAGS += -I ./src/
+CPPFLAGS += -std=c++20 -O2
 CPPFLAGS += -MMD -MP
 
 JSON      = ./lib/json
 
-CPPFLAGS += -I ./src/
+CPPFLAGS += -I ./src/ -iquote ./src/
 CPPFLAGS += -I $(JSON)/include/
 
 TARGET    = libnaga.a

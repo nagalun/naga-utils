@@ -1,5 +1,7 @@
 #pragma once
 
+#include <coroutine>
+#include <exception>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -10,11 +12,13 @@
 #include <set>
 #include <type_traits>
 #include <typeindex>
+#include <stop_token>
 
-#include <explints.hpp>
-#include <tuple.hpp>
-#include <shared_ptr_ll.hpp>
+#include "explints.hpp"
+#include "tuple.hpp"
+#include "shared_ptr_ll.hpp"
 #include "Poll.hpp"
+#include "async.hpp"
 
 #include <postgresql/libpq-fe.h>
 
@@ -62,8 +66,18 @@ public:
 
 	void setAutoReconnect(bool);
 
-	template<int priority = 0, typename... Ts>
+	template<typename... Ts>
+	ll::shared_ptr<Query> query(int priority, std::stop_token, std::string, Ts&&...);
+
+	template<typename... Ts>
+	ll::shared_ptr<Query> query(int priority, std::string, Ts&&...);
+
+	template<typename... Ts>
+	ll::shared_ptr<Query> query(std::stop_token, std::string, Ts&&...);
+
+	template<typename... Ts>
 	ll::shared_ptr<Query> query(std::string, Ts&&...);
+
 	// cancel may fail, query callback will still be called, even if cancelled ok
 	bool cancelQuery(Query&);
 
@@ -94,52 +108,9 @@ private:
 	void socketCallback(nev::Poll&, int, int);
 };
 
-class AsyncPostgres::Query {
-	std::string command;
-	std::function<void(Result)> onDone;
-	const char * const * values;
-	const int * lengths;
-	const int * formats;
-	AsyncPostgres::QueryQueue::const_iterator queue_it;
-	int nParams;
-	const int priority;
-
-public:
-	Query(int prio, std::string, const char * const *, const int *, const int *, int);
-	virtual ~Query();
-
-	bool isDone() const;
-	void then(std::function<void(Result)>);
-
-	bool operator>(const Query&) const;
-	bool operator<(const Query&) const;
-
-private:
-	int send(PGconn *);
-	void done(Result);
-	AsyncPostgres::QueryQueue::const_iterator getQueueIterator() const;
-	void setQueueIterator(AsyncPostgres::QueryQueue::const_iterator);
-
-	friend AsyncPostgres;
-};
-
-template<typename... Ts>
-class AsyncPostgres::TemplatedQuery : public AsyncPostgres::Query {
-	// we want to store the actual values, not references/pointers to them, so decay types
-	std::tuple<typename std::decay<Ts>::type...> valueStorage;
-	const std::array<const char *, sizeof... (Ts)> realValues;
-	const std::array<int, sizeof... (Ts)> realLengths;
-	const std::array<int, sizeof... (Ts)> realFormats;
-
-	template<std::size_t... Is>
-	TemplatedQuery(std::index_sequence<Is...>, int prio, std::string, Ts&&...);
-
-public:
-	TemplatedQuery(int prio, std::string, Ts&&...);
-};
-
 class AsyncPostgres::Result {
 public:
+	class Error;
 	class Row;
 	class iterator;
 
@@ -147,15 +118,18 @@ private:
 	std::unique_ptr<PGresult, void (*)(PGresult *)> pgResult;
 	PGconn * conn;
 
+public:
+	Result();
 	Result(PGresult *, PGconn *);
 
-public:
 	sz_t numAffected() const;
 	sz_t size() const;
 	sz_t rowSize() const;
 	bool success() const;
 	bool expectMoreResults() const;
 	ExecStatusType getStatus() const;
+	const char* getErrorMessage() const;
+	[[noreturn]] void throwStatus() const;
 	bool canCopyTo() const;
 
 	bool blockingCopy(const char *, sz_t);
@@ -169,8 +143,18 @@ public:
 
 	Row operator[](int);
 	operator bool() const;
+};
 
-	friend AsyncPostgres;
+class AsyncPostgres::Result::Error : std::exception {
+	ExecStatusType errCode;
+	std::string errMsg;
+
+public:
+	Error(ExecStatusType errCode, std::string errMsg);
+
+	ExecStatusType code() const noexcept;
+	const char* codeStr() const noexcept;
+	const char* what() const noexcept override;
 };
 
 class AsyncPostgres::Result::Row {
@@ -250,4 +234,61 @@ public:
 	friend AsyncPostgres;
 };
 
-#include "AsyncPostgres.tpp"
+class AsyncPostgres::Query {
+	AsyncPostgres& ap;
+	std::stop_callback<std::function<void(void)>> stopCb;
+	std::string command;
+	std::function<void(Result)> onDone;
+	const char * const * values;
+	const int * lengths;
+	const int * formats;
+	AsyncPostgres::QueryQueue::const_iterator queue_it;
+	int nParams;
+	const int priority;
+	Result res;
+	bool expectsResults;
+	bool cancelled;
+
+public:
+	Query(AsyncPostgres&, int prio, std::stop_token, std::string, const char * const *, const int *, const int *, int);
+	virtual ~Query();
+
+	void markCancelled();
+
+	bool isDone() const;
+	void then(std::function<void(Result)>);
+
+	bool await_ready() const noexcept;
+	void await_suspend(std::coroutine_handle<> h);
+	Result await_resume();
+
+	bool operator>(const Query&) const;
+	bool operator<(const Query&) const;
+
+private:
+	int send(PGconn *);
+	void done(Result);
+	AsyncPostgres::QueryQueue::const_iterator getQueueIterator() const;
+	void setQueueIterator(AsyncPostgres::QueryQueue::const_iterator);
+
+	friend AsyncPostgres;
+};
+
+AwaiterProxy<AsyncPostgres::Query> operator co_await(ll::shared_ptr<AsyncPostgres::Query>);
+
+template<typename... Ts>
+class AsyncPostgres::TemplatedQuery : public AsyncPostgres::Query {
+	// we want to store the actual values, not references/pointers to them, so decay types
+	std::tuple<typename std::decay<Ts>::type...> valueStorage;
+	const std::array<const char *, sizeof... (Ts)> realValues;
+	const std::array<int, sizeof... (Ts)> realLengths;
+	const std::array<int, sizeof... (Ts)> realFormats;
+
+	template<std::size_t... Is>
+	TemplatedQuery(std::index_sequence<Is...>, AsyncPostgres&, int prio, std::stop_token, std::string, Ts&&...);
+
+public:
+	TemplatedQuery(AsyncPostgres&, int prio, std::stop_token, std::string, Ts&&...);
+};
+
+#include "AsyncPostgres.tpp" // IWYU pragma: keep

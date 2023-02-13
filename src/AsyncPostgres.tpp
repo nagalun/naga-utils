@@ -5,11 +5,13 @@
 #include <stdexcept>
 #include <optional>
 #include <cstring>
+#include <utility>
 
-#include <byteswap.hpp>
-#include <stringparser.hpp>
-#include <templateutils.hpp>
-#include <explints.hpp>
+#include "OpCancelledException.hpp"
+#include "byteswap.hpp"
+#include "stringparser.hpp"
+#include "templateutils.hpp"
+#include "explints.hpp"
 
 namespace detail {
 
@@ -183,8 +185,8 @@ byteSwap(T& value) {
 
 template<typename... Ts>
 template<std::size_t... Is>
-AsyncPostgres::TemplatedQuery<Ts...>::TemplatedQuery(std::index_sequence<Is...>, int prio, std::string cmd, Ts&&... params)
-: Query(prio, std::move(cmd), realValues.data(), realLengths.data(), realFormats.data(), sizeof... (Ts)),
+AsyncPostgres::TemplatedQuery<Ts...>::TemplatedQuery(std::index_sequence<Is...>, AsyncPostgres& ap, int prio, std::stop_token st, std::string cmd, Ts&&... params)
+: Query(ap, prio, std::move(st), std::move(cmd), realValues.data(), realLengths.data(), realFormats.data(), sizeof... (Ts)),
   valueStorage(std::forward<Ts>(params)...),
   realValues{detail::getDataPointer(std::get<Is>(valueStorage))...},
   realLengths{detail::getSize(std::get<Is>(valueStorage))...},
@@ -193,19 +195,36 @@ AsyncPostgres::TemplatedQuery<Ts...>::TemplatedQuery(std::index_sequence<Is...>,
 }
 
 template<typename... Ts>
-AsyncPostgres::TemplatedQuery<Ts...>::TemplatedQuery(int prio, std::string cmd, Ts&&... params)
-: TemplatedQuery(std::index_sequence_for<Ts...>{}, prio, std::move(cmd), std::forward<Ts>(params)...) { }
+AsyncPostgres::TemplatedQuery<Ts...>::TemplatedQuery(AsyncPostgres& ap, int prio, std::stop_token st, std::string cmd, Ts&&... params)
+: TemplatedQuery(std::index_sequence_for<Ts...>{}, ap, prio, std::move(st), std::move(cmd), std::forward<Ts>(params)...) { }
 
-template<int priority, typename... Ts>
-ll::shared_ptr<AsyncPostgres::Query> AsyncPostgres::query(std::string command, Ts&&... params) {
+template<typename... Ts>
+ll::shared_ptr<AsyncPostgres::Query> AsyncPostgres::query(int priority, std::stop_token st, std::string command, Ts&&... params) {
+	OpCancelledException::check(st);
+
 	if (!busy && isConnected()) {
 		signalCompletion();
 	}
 
 	// dereference the iterator returned by emplace, and the unique_ptr
-	auto it = queries.emplace(ll::make_shared<AsyncPostgres::TemplatedQuery<Ts...>>(priority, std::move(command), std::forward<Ts>(params)...));
+	auto it = queries.emplace(ll::make_shared<AsyncPostgres::TemplatedQuery<Ts...>>(*this, priority, std::move(st), std::move(command), std::forward<Ts>(params)...));
 	(*it)->setQueueIterator(it);
 	return *it;
+}
+
+template<typename... Ts>
+ll::shared_ptr<AsyncPostgres::Query> AsyncPostgres::query(int prio, std::string command, Ts&&... params) {
+	return query(prio, std::stop_token{}, std::move(command), std::forward<Ts>(params)...);
+}
+
+template<typename... Ts>
+ll::shared_ptr<AsyncPostgres::Query> AsyncPostgres::query(std::stop_token st, std::string command, Ts&&... params) {
+	return query(0, std::move(st), std::move(command), std::forward<Ts>(params)...);
+}
+
+template<typename... Ts>
+ll::shared_ptr<AsyncPostgres::Query> AsyncPostgres::query(std::string command, Ts&&... params) {
+	return query(0, {}, std::move(command), std::forward<Ts>(params)...);
 }
 
 template<typename Func, typename Tuple>

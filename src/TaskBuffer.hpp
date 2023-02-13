@@ -7,7 +7,9 @@
 #include <thread>
 #include <atomic>
 #include <memory>
+
 #include "Poll.hpp"
+#include "async.hpp"
 
 class TaskBuffer {
 	std::unique_ptr<nev::Async> execCaller;
@@ -34,6 +36,10 @@ public:
 	/* Thread safe */
 	void runInMainThread(std::function<void(TaskBuffer &)>);
 	void queue(std::function<void(TaskBuffer &)>);
+
+	/* also thread safe, coro equivalent to functions above */
+	Defer switchToMain();
+	Defer switchToThread();
 
 private:
 	void executeMainThreadTasks();

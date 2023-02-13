@@ -30,13 +30,43 @@ TimedCallbacks::TimerToken::TimerToken(Iter it, TimedCallbacks* tc)
 	it->token = this;
 }
 
+TimedCallbacks::TimerToken::TimerToken()
+: tc(nullptr) { }
+
+TimedCallbacks::TimerToken::TimerToken(TimerToken&& tok) noexcept
+: it(std::exchange(tok.it, {})),
+  tc(std::exchange(tok.tc, nullptr)) {
+	if (tc) {
+		it->token = this;
+	}
+}
+
+const TimedCallbacks::TimerToken& TimedCallbacks::TimerToken::operator=(TimerToken&& tok) noexcept {
+	*this = nullptr;
+	it = std::exchange(tok.it, {});
+	tc = std::exchange(tok.tc, nullptr);
+	if (tc) {
+		it->token = this;
+	}
+	return *this;
+}
+
+TimedCallbacks::TimerToken::~TimerToken() {
+	*this = nullptr;
+}
+
 TimedCallbacks::TimerToken::operator bool() const noexcept {
 	return tc;
 }
 
 std::nullptr_t TimedCallbacks::TimerToken::operator=(std::nullptr_t) noexcept {
-	it = {};
-	tc = nullptr;
+	if (tc) {
+		it->token = nullptr;
+		tc->stop(it);
+		tc = nullptr;
+		it = {};
+	}
+
 	return nullptr;
 }
 
@@ -78,31 +108,6 @@ bool TimedCallbacks::TimerToken::stop() {
 void TimedCallbacks::TimerToken::setCb(std::function<bool(void)> cb) {
 	if (tc) {
 		it->cb = std::move(cb);
-	}
-}
-
-TimedCallbacks::TimerToken::TimerToken(TimerToken&& tok) noexcept
-: it(std::exchange(tok.it, {})),
-  tc(std::exchange(tok.tc, nullptr)) {
-	if (tc) {
-		it->token = this;
-	}
-}
-
-const TimedCallbacks::TimerToken& TimedCallbacks::TimerToken::operator=(TimerToken&& tok) noexcept {
-	it = std::exchange(tok.it, {});
-	tc = std::exchange(tok.tc, nullptr);
-	if (tc) {
-		it->token = this;
-	}
-	return *this;
-}
-
-TimedCallbacks::TimerToken::~TimerToken() {
-	if (tc) {
-		tc->stop(it);
-		tc = nullptr;
-		it = {};
 	}
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 #include "Packet.hpp"
+
 #include <type_traits>
 #include <array>
 #include <string>
@@ -10,6 +11,7 @@
 #include <tuple>
 #include <cassert>
 #include <cstdio>
+
 #include "BufferHelper.hpp"
 #include "templateutils.hpp"
 #include "varints.hpp"
@@ -21,18 +23,18 @@
 #define STR(x) STR_HELPER(x)
 
 #if __cpp_exceptions
-#	define __try      try
-#	define __catch(X) catch(X)
-#	define __throw    throw
+#	define maybe__try      try
+#	define maybe__catch(X) catch(X)
+#	define maybe__throw    throw
 #	ifdef DEBUG
 #		define BUFFER_ERROR std::length_error(std::string(__PRETTY_FUNCTION__) + ":" + std::to_string(__LINE__))
 #	else
 #		define BUFFER_ERROR std::length_error("Buffer error")
 #	endif
 #else
-#	define __try      if (true)
-#	define __catch(X) if (false)
-#	define __throw
+#	define maybe__try      if (true)
+#	define maybe__catch(X) if (false)
+#	define maybe__throw
 #	ifdef DEBUG
 #		define BUFFER_ERROR do { \
 			std::fputs("BUFFER_ERROR ON ", stderr); \
@@ -311,7 +313,7 @@ typename std::enable_if<std::is_arithmetic<N>::value,
 	N>::type
 readFromBuf(const u8 *& b, sz_t remaining) {
 	if (remaining < sizeof(N)) {
-		__throw BUFFER_ERROR;
+		maybe__throw BUFFER_ERROR;
 	}
 
 	const u8 * readAt = b;
@@ -328,7 +330,7 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 	using T = typename Container::value_type;
 
 	if (!remaining) {
-		__throw BUFFER_ERROR;
+		maybe__throw BUFFER_ERROR;
 	}
 
 	const u8 * readAt = b;
@@ -336,7 +338,7 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 	u64 size = decodeUnsignedVarint(readAt, decodedBytes, remaining);
 
 	if (remaining - decodedBytes < size * sizeof(T)) {
-		__throw BUFFER_ERROR;
+		maybe__throw BUFFER_ERROR;
 	}
 
 	b += decodedBytes + size * sizeof(T);
@@ -356,14 +358,14 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 	using T = typename Container::value_type;
 
 	if (!remaining) {
-		__throw BUFFER_ERROR;
+		maybe__throw BUFFER_ERROR;
 	}
 
 	sz_t decodedBytes;
 	u64 size = decodeUnsignedVarint(b, decodedBytes, remaining);
 
 	if (remaining - decodedBytes < size) { /* size of the elements will be 1 at least */
-		__throw BUFFER_ERROR;
+		maybe__throw BUFFER_ERROR;
 	}
 
 	b += decodedBytes;
@@ -417,7 +419,7 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 
 	if constexpr (std::is_arithmetic<T>::value) {
 		if (remaining < sizeof(T) * size) {
-			__throw BUFFER_ERROR;
+			maybe__throw BUFFER_ERROR;
 		}
 
 		return staticArrayFromBuf<Array>(b, std::make_index_sequence<size>{});
@@ -453,7 +455,7 @@ std::tuple<Args...> Packet<opCode, Args...>::fromBuffer(const u8 * buffer, sz_t 
 	// fast size check
 	constexpr sz_t expectedSize = add(sizeof(Args)...);
 	if (are_all_arithmetic<Args...>::value && expectedSize != size) {
-		__throw BUFFER_ERROR;
+		maybe__throw BUFFER_ERROR;
 	}
 
 	return std::tuple<Args...>{readFromBuf<Args>(buffer, size - (buffer - start))...};
@@ -482,8 +484,8 @@ std::tuple<std::unique_ptr<u8[]>, sz_t> Packet<opCode, Args...>::toBuffer(Args..
 }
 
 #undef BUFFER_ERROR
-#undef __throw
-#undef __catch
-#undef __try
+#undef maybe__throw
+#undef maybe__catch
+#undef maybe__try
 #undef STR
 #undef STR_HELPER

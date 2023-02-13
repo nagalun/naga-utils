@@ -6,16 +6,17 @@
 #include <functional>
 
 class PropertyReader {
-	const std::string filePath;
+	std::string filePath;
 	bool propsChanged;
 	std::map<std::string, std::string, std::less<>> props;
+
+	PropertyReader(const PropertyReader&) = default;
+	PropertyReader& operator=(const PropertyReader&) = default;
 
 public:
 	PropertyReader(std::string_view filePath);
 
 	PropertyReader(PropertyReader&&);
-	PropertyReader(const PropertyReader&) = delete;
-	PropertyReader& operator=(const PropertyReader&) = delete;
 
 	~PropertyReader();
 
@@ -28,4 +29,8 @@ public:
 	std::string_view getOrSetProp(std::string_view key, std::string_view defval);
 	void setProp(std::string_view key, std::string value);
 	bool delProp(std::string_view key);
+
+	PropertyReader copy();
+	void markAsWritten();
+	bool isFileOutdated() const;
 };

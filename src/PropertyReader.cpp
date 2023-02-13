@@ -7,7 +7,7 @@
 
 // TODO: don't allow spaces in key names, or escape them
 
-std::string parseSpecial(std::string str) {
+static std::string parseSpecial(std::string str) {
 	std::size_t i = 0;
 	while ((i = str.find('\\', i)) != std::string::npos) {
 		i++;
@@ -30,10 +30,10 @@ std::string parseSpecial(std::string str) {
 		str.erase(i, 1);
 	}
 
-	return std::move(str);
+	return str;
 }
 
-std::string serializeSpecial(std::string str) {
+static std::string serializeSpecial(std::string str) {
 	std::size_t i = 0;
 	while ((i = str.find_first_of("\n\\", i)) != std::string::npos) {
 		switch (str[i]) {
@@ -47,7 +47,7 @@ std::string serializeSpecial(std::string str) {
 		}
 	}
 
-	return std::move(str);
+	return str;
 }
 
 PropertyReader::PropertyReader(std::string_view path)
@@ -99,7 +99,8 @@ bool PropertyReader::writeToDisk(bool force) {
 		for (auto & kv : props) {
 			file << serializeSpecial(kv.first) << ' ' << serializeSpecial(kv.second) << '\n';
 		}
-	} else if (int err = std::remove(filePath.c_str())) {
+	} else if (std::remove(filePath.c_str())) {
+		int err = errno;
 		throw std::runtime_error("Couldn't delete empty file (" + filePath + "): " + std::strerror(err));
 	}
 
@@ -148,6 +149,18 @@ bool PropertyReader::delProp(std::string_view key) {
 		props.erase(search);
 		return true;
 	}
-	
+
 	return false;
+}
+
+PropertyReader PropertyReader::copy() {
+	return PropertyReader(*this);
+}
+
+void PropertyReader::markAsWritten() {
+	propsChanged = false;
+}
+
+bool PropertyReader::isFileOutdated() const {
+	return propsChanged;
 }
