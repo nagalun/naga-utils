@@ -196,18 +196,17 @@ public:
 	virtual const char * what() const noexcept;
 };
 
-class AsyncPostgres::Result::iterator
-: public std::iterator<
-	std::random_access_iterator_tag,
-	AsyncPostgres::Result::Row,
-	int,
-	AsyncPostgres::Result::Row *,
-	AsyncPostgres::Result::Row
-> {
+class AsyncPostgres::Result::iterator {
 	PGresult * r;
 	int rowIndex;
 
 public:
+	using iterator_category = std::random_access_iterator_tag;
+	using value_type = AsyncPostgres::Result::Row;
+	using difference_type = int;
+	using pointer = value_type*;
+	using reference = value_type;
+
 	explicit iterator(PGresult *, int);
 	iterator& operator++();
 	iterator operator++(int);

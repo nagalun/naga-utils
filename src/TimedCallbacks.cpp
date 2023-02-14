@@ -18,10 +18,42 @@ bool TimedCallbacks::TimerInfo::maybeCall(std::chrono::steady_clock::time_point 
 	return false;
 }
 
+TimedCallbacks::TimerInfo::TimerInfo(
+	std::function<bool(void)> cb, std::chrono::steady_clock::duration interval,
+	std::chrono::steady_clock::time_point next
+)
+: cb(std::move(cb)),
+  interval(interval),
+  next(next),
+  token(nullptr),
+  paused(false) { }
+
 TimedCallbacks::TimerInfo::~TimerInfo() {
 	if (token) {
 		*token = nullptr; // call operator=(std::nullptr)
 	}
+}
+
+
+TimedCallbacks::TimerInfo::TimerInfo(TimedCallbacks::TimerInfo&& o) noexcept
+: cb(std::move(o.cb)),
+  interval(o.interval),
+  next(o.next),
+  token(std::exchange(o.token, nullptr)),
+  paused(o.paused) { }
+
+TimedCallbacks::TimerInfo& TimedCallbacks::TimerInfo::operator=(TimedCallbacks::TimerInfo&& o) noexcept {
+	if (token) {
+		*token = nullptr;
+	}
+
+	cb = std::move(o.cb);
+	interval = o.interval;
+	next = o.next;
+	token = std::exchange(o.token, nullptr);
+	paused = o.paused;
+	// the iterator in token must be updated. this is done by the caller
+	return *this;
 }
 
 TimedCallbacks::TimerToken::TimerToken(Iter it, TimedCallbacks* tc)
@@ -113,7 +145,7 @@ void TimedCallbacks::TimerToken::setCb(std::function<bool(void)> cb) {
 
 TimedCallbacks::TimedCallbacks(Loop& loop, std::chrono::milliseconds resolution)
 : loop(loop) {
-	mainTimer = loop.timer();
+	mainTimer = loop.timer(true);
 	mainTimer->start([this] (Timer&) {
 		fire();
 	}, resolution.count());
@@ -126,7 +158,7 @@ void TimedCallbacks::clearTimers() {
 TimedCallbacks::TimerToken TimedCallbacks::timer(std::function<bool(void)> func, std::chrono::milliseconds timeout) {
 	auto now = std::chrono::steady_clock::now();
 	bool update = runningTimers.size() == runningTimers.capacity();
-	auto it = runningTimers.emplace(runningTimers.end(), TimerInfo{std::move(func), timeout, now + timeout, nullptr});
+	auto it = runningTimers.emplace(runningTimers.end(), TimerInfo(std::move(func), timeout, now + timeout));
 
 	if (update) {
 		updateTokens(runningTimers.begin());

@@ -62,7 +62,7 @@ AsyncPostgres::AsyncPostgres(Loop& loop, TimedCallbacks& tc)
 
 	nextCommandCaller = loop.async([this] (nev::Async&) {
 		processNextCommand();
-	});
+	}, true);
 }
 
 void AsyncPostgres::connect(std::unordered_map<std::string, std::string> connParams, bool expandDbname) {

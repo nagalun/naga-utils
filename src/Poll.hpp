@@ -15,9 +15,9 @@ struct Timer;
 struct Loop {
 	virtual ~Loop();
 
-	virtual std::unique_ptr<Poll> poll(int fd) = 0;
-	virtual std::unique_ptr<Async> async(std::function<void(Async&)> cb) = 0;
-	virtual std::unique_ptr<Timer> timer() = 0;
+	virtual std::unique_ptr<Poll> poll(int fd, bool fallthrough = false) = 0;
+	virtual std::unique_ptr<Async> async(std::function<void(Async&)> cb, bool fallthrough = false) = 0;
+	virtual std::unique_ptr<Timer> timer(bool fallthrough = false) = 0;
 
 	// returns a pointer to the native handle, e.g. uv_loop_t
 	virtual void* handle() = 0;

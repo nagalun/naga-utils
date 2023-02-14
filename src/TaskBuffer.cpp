@@ -13,7 +13,7 @@
 TaskBuffer::TaskBuffer(nev::Loop& loop, std::size_t numWorkers) {
 	execCaller = loop.async([this] (nev::Async&) {
 		executeMainThreadTasks();
-	});
+	}, true);
 
 	//shouldRun = ATOMIC_FLAG_INIT;
 	shouldRun.clear();

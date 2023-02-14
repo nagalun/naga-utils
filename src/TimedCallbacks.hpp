@@ -17,7 +17,18 @@ public:
 		std::chrono::steady_clock::duration interval;
 		std::chrono::steady_clock::time_point next;
 		TimerToken* token;
-		bool paused = false;
+		bool paused;
+
+		TimerInfo(
+			std::function<bool(void)> cb, std::chrono::steady_clock::duration interval,
+			std::chrono::steady_clock::time_point next
+		);
+
+		TimerInfo(const TimerInfo&) = delete;
+		TimerInfo& operator=(const TimerInfo&) = delete;
+
+		TimerInfo(TimerInfo&& o) noexcept;
+		TimerInfo& operator=(TimerInfo&& o) noexcept;
 
 		~TimerInfo();
 
