@@ -238,6 +238,7 @@ class AsyncPostgres::Query {
 	std::stop_callback<std::function<void(void)>> stopCb;
 	std::string command;
 	std::function<void(Result)> onDone;
+	std::coroutine_handle<> coro;
 	const char * const * values;
 	const int * lengths;
 	const int * formats;

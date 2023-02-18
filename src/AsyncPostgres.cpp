@@ -350,6 +350,7 @@ AsyncPostgres::Query::Query(AsyncPostgres& ap, int prio, std::stop_token st, std
 : ap(ap),
   stopCb(std::move(st), [this] { this->ap.cancelQuery(*this); }),
   command(std::move(cmd)),
+  coro(nullptr),
   values(vals),
   lengths(lens),
   formats(fmts),
@@ -359,9 +360,9 @@ AsyncPostgres::Query::Query(AsyncPostgres& ap, int prio, std::stop_token st, std
   cancelled(false) { }
 
 AsyncPostgres::Query::~Query() {
-	if (onDone && expectsResults) {
+	if (expectsResults) {
 		// tell callback we couldn't complete the request
-		onDone(AsyncPostgres::Result(nullptr, nullptr));
+		done(AsyncPostgres::Result(nullptr, nullptr));
 	}
 }
 
@@ -388,10 +389,14 @@ bool AsyncPostgres::Query::await_ready() const noexcept {
 }
 
 void AsyncPostgres::Query::await_suspend(std::coroutine_handle<> h) {
-	then([this, h{std::move(h)}](Result r) {
-		h.resume();
-		onDone = nullptr; // don't resume twice if more data is coming
-	});
+	coro = std::move(h);
+	// doesn't get called for some dumb reason
+	// std::cout << "suspend\n";
+	// then([this, h{std::move(h)}](Result r) {
+	// 	h.resume();
+	// 	std::cout << "resume\n";
+	// 	onDone = nullptr; // don't resume twice if more data is coming
+	// });
 }
 
 AsyncPostgres::Result AsyncPostgres::Query::await_resume() {
@@ -420,15 +425,18 @@ int AsyncPostgres::Query::send(PGconn * conn) {
 }
 
 void AsyncPostgres::Query::done(AsyncPostgres::Result r) {
-	// currently loses the last result if it wasn't consumed in time
 	expectsResults = r.expectMoreResults();
+	res = std::move(r);
 	if (onDone) {
-		onDone(std::move(r));
+		onDone(std::move(res));
+		res = {};
 		if (!expectsResults) {
 			onDone = nullptr; // make it impossible to double-complete
 		}
-	} else {
-		res = std::move(r);
+	}
+	if (coro) {
+		coro.resume();
+		coro = nullptr;
 	}
 }
 

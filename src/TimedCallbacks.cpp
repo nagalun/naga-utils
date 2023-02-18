@@ -30,7 +30,9 @@ TimedCallbacks::TimerInfo::TimerInfo(
 
 TimedCallbacks::TimerInfo::~TimerInfo() {
 	if (token) {
-		*token = nullptr; // call operator=(std::nullptr)
+		token->it = {};
+		token->tc = nullptr;
+		token = nullptr;
 	}
 }
 
@@ -63,7 +65,8 @@ TimedCallbacks::TimerToken::TimerToken(Iter it, TimedCallbacks* tc)
 }
 
 TimedCallbacks::TimerToken::TimerToken()
-: tc(nullptr) { }
+: it({}),
+  tc(nullptr) { }
 
 TimedCallbacks::TimerToken::TimerToken(TimerToken&& tok) noexcept
 : it(std::exchange(tok.it, {})),
@@ -148,7 +151,7 @@ TimedCallbacks::TimedCallbacks(Loop& loop, std::chrono::milliseconds resolution)
 	mainTimer = loop.timer(true);
 	mainTimer->start([this] (Timer&) {
 		fire();
-	}, resolution.count());
+	}, resolution.count(), resolution.count());
 }
 
 void TimedCallbacks::clearTimers() {
@@ -169,12 +172,14 @@ TimedCallbacks::TimerToken TimedCallbacks::timer(std::function<bool(void)> func,
 
 void TimedCallbacks::fire() {
 	auto now = std::chrono::steady_clock::now();
-	for (auto it = runningTimers.begin(); it != runningTimers.end(); ++it) {
+	for (auto it = runningTimers.begin(); it != runningTimers.end();) {
 		TimerInfo& ti = *it;
 
 		if (ti.maybeCall(now)) {
 			it = runningTimers.erase(it);
 			updateTokens(it);
+		} else {
+			++it;
 		}
 	}
 }
