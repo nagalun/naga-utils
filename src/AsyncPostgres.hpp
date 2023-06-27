@@ -14,6 +14,7 @@
 #include <typeindex>
 #include <stop_token>
 
+#include "TimedCallbacks.hpp"
 #include "explints.hpp"
 #include "tuple.hpp"
 #include "shared_ptr_ll.hpp"
@@ -21,8 +22,6 @@
 #include "async.hpp"
 
 #include <postgresql/libpq-fe.h>
-
-class TimedCallbacks;
 
 class AsyncPostgres {
 public:
@@ -41,6 +40,8 @@ public:
 private:
 	nev::Loop& loop;
 	TimedCallbacks& tc;
+	TimedCallbacks::TimerToken reconnectTimer;
+	TimedCallbacks::TimerToken qRetryTimer;
 
 	std::unique_ptr<nev::Async> nextCommandCaller;
 	std::unique_ptr<PGconn, void (*)(PGconn *)> pgConn;

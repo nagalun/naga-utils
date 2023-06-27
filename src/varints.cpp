@@ -6,7 +6,7 @@
 #if __cpp_exceptions
 #	include <stdexcept>
 #else
-#	include <errno.h>
+#	include <cerrno>
 #endif
 
 u64 decodeUnsignedVarint(const u8 * const data, sz_t &decodedBytes, sz_t maxBytes) {
@@ -62,6 +62,24 @@ sz_t unsignedVarintSize(u64 value) {
 	} while (value >>= 7);
 
 	return encoded;
+}
+
+i64 decodeSignedVarint(const u8 * const data, sz_t &decodedBytes, sz_t maxBytes) {
+	u64 ur = decodeUnsignedVarint(data, decodedBytes, maxBytes);
+	i64 sr = static_cast<i64>(ur >> 1);
+	return (ur & 1) ? ~sr : sr;
+}
+
+sz_t encodeSignedVarint(u8 * const buffer, i64 value) {
+	u64 uvalue = value < 0 ? ~value : value;
+	uvalue = (uvalue << 1) | (value < 0 ? 1 : 0);
+	return encodeUnsignedVarint(buffer, uvalue);
+}
+
+sz_t signedVarintSize(i64 value) {
+	u64 uvalue = value < 0 ? ~value : value;
+	uvalue = (uvalue << 1) | (value < 0 ? 1 : 0);
+	return unsignedVarintSize(uvalue);
 }
 
 std::string getVarintString(const u8 * data, sz_t &decodedBytes) {

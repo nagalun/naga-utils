@@ -171,7 +171,7 @@ void AsyncPostgres::maybeSignalDisconnectionAndReconnect() {
 	}
 
 	if (isAutoReconnectEnabled()) {
-		tc.timer([this] {
+		reconnectTimer = tc.timer([this] {
 			if (!reconnect()) {
 				std::cerr << "Couldn't reconnect to DB! (" << getLastErrorFirstLine() << "), retrying." << std::endl;
 				return true;
@@ -249,7 +249,7 @@ void AsyncPostgres::processNextCommand() {
 	}
 
 	// this should never happen, but just in case try again in 5 secs
-	tc.timer([this] {
+	qRetryTimer = tc.timer([this] {
 		processNextCommand();
 		return false;
 	}, 5000ms);
@@ -654,5 +654,4 @@ AsyncPostgres::Notification::Notification(PGnotify * n)
 
 std::string_view AsyncPostgres::Notification::channelName() const { return pgNotify->relname; }
 int              AsyncPostgres::Notification::bePid()       const { return pgNotify->be_pid; }
-std::string_view AsyncPostgres::Notification::extra()       const { return pgNotify->extra;
-}
+std::string_view AsyncPostgres::Notification::extra()       const { return pgNotify->extra; }

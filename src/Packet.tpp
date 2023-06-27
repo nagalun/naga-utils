@@ -63,30 +63,14 @@ template<typename... Ts>
 sz_t getSize(const std::tuple<Ts...>& t);
 
 template<typename Container>
-typename std::enable_if<has_const_iterator<Container>::value
-	&& !is_std_array<Container>::value
-	&& !has_const_iterator<typename Container::value_type>::value
-	&& std::is_arithmetic<typename Container::value_type>::value,
+typename std::enable_if<has_const_iterator<Container>::value,
 	sz_t>::type
 getSize(const Container& c);
 
-template<typename Container>
-typename std::enable_if<has_const_iterator<Container>::value
-	&& !is_std_array<Container>::value
-	&& !has_const_iterator<typename Container::value_type>::value
-	&& is_tuple<typename Container::value_type>::value,
+template<class T>
+typename std::enable_if<std::is_same_v<T, uvar> || std::is_same_v<T, ivar>,
 	sz_t>::type
-getSize(const Container& c);
-
-template<typename Container>
-typename std::enable_if<has_const_iterator<Container>::value
-	&& !is_std_array<Container>::value
-	&& has_const_iterator<typename Container::value_type>::value,
-	sz_t>::type
-getSize(const Container& c);
-
-template<typename T, std::size_t N>
-sz_t getSize(const std::array<T, N>& arr);
+getSize(T val);
 
 template<typename T>
 sz_t getSize(const std::optional<T>& opt);
@@ -110,6 +94,11 @@ sz_t writeToBuf(u8 *& b, const std::array<T, N>& arr, sz_t remaining);
 
 template<typename T>
 sz_t writeToBuf(u8 *& b, const std::optional<T>& opt, sz_t remaining);
+
+template<class T>
+typename std::enable_if<std::is_same_v<T, uvar> || std::is_same_v<T, ivar>,
+	sz_t>::type
+writeToBuf(u8 *& b, T val, sz_t remaining);
 
 template<typename N>
 typename std::enable_if<std::is_arithmetic<N>::value,
@@ -145,6 +134,11 @@ typename std::enable_if<is_optional<OptionalValue>::value,
 	OptionalValue>::type
 readFromBuf(const u8 *& b, sz_t remaining);
 
+template<class R>
+typename std::enable_if<std::is_same_v<R, uvar> || std::is_same_v<R, ivar>,
+	R>::type
+readFromBuf(const u8 *& b, sz_t remaining);
+
 //////////////////////////////
 
 template<typename N>
@@ -169,21 +163,7 @@ sz_t getSize(const std::tuple<Ts...>& t) {
 }
 
 template<typename Container>
-typename std::enable_if<has_const_iterator<Container>::value
-	&& !is_std_array<Container>::value
-	&& !has_const_iterator<typename Container::value_type>::value // <- i don't think this is necessary
-	&& std::is_arithmetic<typename Container::value_type>::value, // eg: no vector of strings
-	sz_t>::type
-getSize(const Container& c) {
-	using T = typename Container::value_type;
-	return c.size() * sizeof(T) + unsignedVarintSize(c.size());
-}
-
-template<typename Container>
-typename std::enable_if<has_const_iterator<Container>::value
-	&& !is_std_array<Container>::value
-	&& !has_const_iterator<typename Container::value_type>::value
-	&& is_tuple<typename Container::value_type>::value,
+typename std::enable_if<has_const_iterator<Container>::value,
 	sz_t>::type
 getSize(const Container& c) {
 	using T = typename Container::value_type;
@@ -201,44 +181,16 @@ getSize(const Container& c) {
 	return size;
 }
 
-template<typename Container>
-typename std::enable_if<has_const_iterator<Container>::value
-	&& !is_std_array<Container>::value
-	&& has_const_iterator<typename Container::value_type>::value,
-	sz_t>::type
-getSize(const Container& c) {
-	using T = typename Container::value_type;
-	using Tv = typename T::value_type; // type of the inner array's content
-
-	sz_t size = unsignedVarintSize(c.size());
-	for (const T& v : c) {
-		if (std::is_arithmetic<Tv>::value) {
-			size += unsignedVarintSize(v.size()) + v.size() * sizeof(Tv);
-		} else {
-			size += getSize(v);
-		}
-	}
-
-	return size;
-}
-
-template<typename T, std::size_t N>
-sz_t getSize(const std::array<T, N>& arr) {
-	if constexpr (std::is_arithmetic<T>::value) {
-		return sizeof(T) * N;
-	} else {
-		sz_t size = 0;
-		for (sz_t i = 0; i < N; i++) {
-			size += getSize(arr[i]);
-		}
-
-		return size;
-	}
-}
-
 template<typename T>
 sz_t getSize(const std::optional<T>& opt) {
 	return sizeof(bool) + (opt.has_value() ? getSize(*opt) : 0);
+}
+
+template<class T>
+typename std::enable_if<std::is_same_v<T, uvar> || std::is_same_v<T, ivar>,
+	sz_t>::type
+getSize(T val) {
+	return val.size();
 }
 
 template<typename N> // double pointer!
@@ -306,6 +258,18 @@ sz_t writeToBuf(u8 *& b, const std::optional<T>& opt, sz_t remaining) {
 	}
 
 	return sizeof(bool);
+}
+
+template<class T>
+typename std::enable_if<std::is_same_v<T, uvar> || std::is_same_v<T, ivar>,
+	sz_t>::type
+writeToBuf(u8 *& b, T val, sz_t remaining) {
+	assert(remaining >= val.size());
+
+	sz_t written = val.write(b);
+	b += written;
+
+	return written;
 }
 
 template<typename N>
@@ -445,6 +409,18 @@ readFromBuf(const u8 *& b, sz_t remaining) {
 	return std::nullopt;
 }
 
+template<class R>
+typename std::enable_if<std::is_same_v<R, uvar> || std::is_same_v<R, ivar>,
+	R>::type
+readFromBuf(const u8 *& b, sz_t remaining) {
+
+	sz_t decoded = 0;
+	R val = R::read(b, decoded, std::min(remaining, sizeof(typename R::value_type)));
+	b += decoded;
+
+	return val;
+}
+
 } // namespace pktdetail
 
 template<u8 opCode, typename... Args>
@@ -462,25 +438,47 @@ std::tuple<Args...> Packet<opCode, Args...>::fromBuffer(const u8 * buffer, sz_t 
 }
 
 template<u8 opCode, typename... Args>
-std::tuple<std::unique_ptr<u8[]>, sz_t> Packet<opCode, Args...>::toBuffer(Args... args) {
+std::tuple<std::unique_ptr<u8[]>, sz_t> Packet<opCode, Args...>::toBuffer(const Args&... args) {
 	using namespace pktdetail;
-	constexpr bool isFixedSize = are_all_arithmetic<Args...>::value;
 
+	constexpr bool isFixedSize = are_all_arithmetic<Args...>::value;
 	const sz_t size = sizeof(opCode) + (isFixedSize
 		? add(sizeof(Args)...)
 		: add(getSize(args)...));
 
 	auto buf(std::make_unique<u8[]>(size));
-	u8 * start = buf.get();
+	sz_t written = toBuffer(buf.get(), size, args...);
+	assert(written == size);
+	return {std::move(buf), size};
+}
+
+template<u8 opCode, typename... Args>
+void Packet<opCode, Args...>::toBuffer(std::vector<u8>& out, const Args&... args) {
+	using namespace pktdetail;
+
+	constexpr bool isFixedSize = are_all_arithmetic<Args...>::value;
+	const sz_t size = sizeof(opCode) + (isFixedSize
+		? add(sizeof(Args)...)
+		: add(getSize(args)...));
+
+	out.resize(size);
+	sz_t written = toBuffer(out.data(), size, args...);
+	assert(written == size);
+}
+
+template<u8 opCode, typename... Args>
+sz_t Packet<opCode, Args...>::toBuffer(u8* buf, sz_t maxSize, const Args&... args) {
+	using namespace pktdetail;
+
+	u8 * start = buf;
 	u8 * to = start;
 
 	*to++ = opCode;
 
-	(writeToBuf(to, args, size - (to - start)), ...);
-	assert(sz_t(to - start) == size);
+	(writeToBuf(to, args, maxSize - (to - start)), ...);
+	assert(sz_t(to - start) <= maxSize);
 
-	return {std::move(buf), size};
-	//cl.send(reinterpret_cast<char *>(start), size);
+	return to - start;
 }
 
 #undef BUFFER_ERROR
