@@ -224,7 +224,12 @@ ll::shared_ptr<AsyncPostgres::Query> AsyncPostgres::query(std::stop_token st, st
 
 template<typename... Ts>
 ll::shared_ptr<AsyncPostgres::Query> AsyncPostgres::query(std::string command, Ts&&... params) {
-	return query(0, {}, std::move(command), std::forward<Ts>(params)...);
+	return query(0, std::stop_token{}, std::move(command), std::forward<Ts>(params)...);
+}
+
+template<typename... Ts>
+ll::shared_ptr<AsyncPostgres::Query> AsyncPostgres::query(const char* command, Ts&&... params) {
+	return query(0, std::stop_token{}, std::string{command}, std::forward<Ts>(params)...);
 }
 
 template<typename Func, typename Tuple>

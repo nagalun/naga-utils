@@ -9,3 +9,9 @@ void OpCancelledException::check(const std::stop_token& st) {
 		throw OpCancelledException{};
 	}
 }
+
+void OpCancelledException::check(const std::stop_source& ss) {
+	if (ss.stop_requested()) {
+		throw OpCancelledException{};
+	}
+}

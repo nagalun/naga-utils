@@ -79,6 +79,9 @@ public:
 	template<typename... Ts>
 	ll::shared_ptr<Query> query(std::string, Ts&&...);
 
+	template<typename... Ts>
+	ll::shared_ptr<Query> query(const char*, Ts&&...);
+
 	// cancel may fail, query callback will still be called, even if cancelled ok
 	bool cancelQuery(Query&);
 

@@ -82,6 +82,7 @@ public:
 
 	void clearTimers();
 
+	// destroying a timer while inside its callback causes UB.
 	TimerToken timer(std::function<bool(void)> func, std::chrono::milliseconds timeout);
 
 private:
