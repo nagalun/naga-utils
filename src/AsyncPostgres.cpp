@@ -366,6 +366,12 @@ AsyncPostgres::Query::~Query() {
 	}
 }
 
+void AsyncPostgres::Query::setPointers(const char* const* _vals, const int* _lengths, const int* _formats) {
+	values = _vals;
+	lengths = _lengths;
+	formats = _formats;
+}
+
 void AsyncPostgres::Query::markCancelled() {
 	cancelled = true;
 }

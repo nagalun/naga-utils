@@ -1,11 +1,14 @@
 #include "base64.hpp"
 
+#include <algorithm>
 #include <memory>
 
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <openssl/buffer.h>
+# if ! OPENSSL_API_LEVEL >= 30000
 #include <openssl/md5.h>
+#endif
 
 constexpr auto bioDeleter = [] (BIO * b) {
 	BIO_free_all(b);
@@ -37,9 +40,24 @@ std::string base64Encode(const u8 * buf, sz_t len) {
 	return std::string(outBuf->data, outBuf->length);
 }
 
-std::array<u8, MD5_DIGEST_LENGTH> md5sum(const u8 * buf, sz_t len) {
+std::array<u8, 16> md5sum(const u8 * buf, sz_t len) {
+
+# if OPENSSL_API_LEVEL >= 30000
+	std::size_t mdlen = 0;
+	std::array<u8, EVP_MAX_MD_SIZE> mdresult;
+
+	std::array<u8, 16> result;
+	result.fill(0);
+
+	if (!EVP_Q_digest(NULL, "MD5", NULL, buf, len, mdresult.data(), &mdlen)) {
+		mdlen = 0;
+	}
+
+	std::copy_n(mdresult.begin(), std::min(mdlen, std::size_t{16}), result.begin());
+#else
 	std::array<u8, MD5_DIGEST_LENGTH> result;
 	MD5(buf, len, &result[0]);
+#endif
 
 	return result;
 }

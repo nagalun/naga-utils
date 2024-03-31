@@ -257,6 +257,7 @@ public:
 	Query(AsyncPostgres&, int prio, std::stop_token, std::string, const char * const *, const int *, const int *, int);
 	virtual ~Query();
 
+	void setPointers(const char* const* vals, const int* lengths, const int* formats);
 	void markCancelled();
 
 	bool isDone() const;
