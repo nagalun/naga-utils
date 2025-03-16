@@ -58,7 +58,8 @@ AsyncPostgres::AsyncPostgres(Loop& loop, TimedCallbacks& tc)
   stopOnceEmpty(false),
   busy(false),
   awaitingResponse(false),
-  autoReconnect(true) {
+  autoReconnect(true),
+  debugPrinting(false) {
 
 	nextCommandCaller = loop.async([this] (nev::Async&) {
 		processNextCommand();
@@ -114,6 +115,10 @@ void AsyncPostgres::disconnect() {
 
 void AsyncPostgres::setAutoReconnect(bool state) {
 	autoReconnect = state;
+}
+
+void AsyncPostgres::setDebugPrinting(bool state) {
+	debugPrinting = state;
 }
 
 bool AsyncPostgres::cancelQuery(Query& q) {
@@ -235,6 +240,10 @@ void AsyncPostgres::processNextCommand() {
 	}
 
 	currentQuery = queries.begin();
+	if (debugPrinting) {
+		(*currentQuery)->print();
+	}
+
 	if ((*currentQuery)->send(pgConn.get())) {
 		awaitingResponse = true;
 		return;
@@ -259,6 +268,10 @@ void AsyncPostgres::processNextCommand() {
 void AsyncPostgres::currentCommandReturnedResult(PGresult * r, bool finished) {
 	// XXX: no check if empty, shouldn't happen anyways
 	if (finished) {
+		// if (debugPrinting) {
+		// 	std::cout << "[SQL] Query finished." << std::endl;
+		// }
+
 		(*currentQuery)->done(Result(r, nullptr));
 		queries.erase(currentQuery);
 
@@ -415,6 +428,10 @@ AsyncPostgres::Result AsyncPostgres::Query::await_resume() {
 	}
 
 	return std::move(res);
+}
+
+void AsyncPostgres::Query::print() {
+	std::cout << "[SQL n=" << nParams << "] " << command << std::endl;
 }
 
 bool AsyncPostgres::Query::operator>(const Query& q) const {

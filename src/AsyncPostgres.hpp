@@ -55,6 +55,8 @@ private:
 	bool busy;
 	bool awaitingResponse;
 	bool autoReconnect;
+	
+	bool debugPrinting;
 
 public:
 	AsyncPostgres(nev::Loop&, TimedCallbacks&);
@@ -66,6 +68,7 @@ public:
 	void disconnect();
 
 	void setAutoReconnect(bool);
+	void setDebugPrinting(bool);
 
 	template<typename... Ts>
 	ll::shared_ptr<Query> query(int priority, std::stop_token, std::string, Ts&&...);
@@ -266,6 +269,8 @@ public:
 	bool await_ready() const noexcept;
 	void await_suspend(std::coroutine_handle<> h);
 	Result await_resume();
+
+	void print();
 
 	bool operator>(const Query&) const;
 	bool operator<(const Query&) const;
