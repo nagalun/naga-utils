@@ -1,4 +1,0 @@
-[submodule "lib/uWebSockets"]
-	path = lib/uWebSockets
-	url = https://github.com/uNetworking/uWebSockets
-	branch = v0.14
