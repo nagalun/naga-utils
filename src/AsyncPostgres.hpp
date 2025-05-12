@@ -21,7 +21,7 @@
 #include "Poll.hpp"
 #include "async.hpp"
 
-#include <postgresql/libpq-fe.h>
+#include <libpq-fe.h>
 
 class AsyncPostgres {
 public:
